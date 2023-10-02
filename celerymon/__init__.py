@@ -156,7 +156,7 @@ def start_celerymon_worker_inspector(
                     )
         for tasks in (inspect.reserved() or {}).values():  # type: ignore[union-attr]
             for task in tasks:
-                task_count[("reserved", task["request"]["type"])] += 1
+                task_count[("reserved", task["type"])] += 1
         for tasks in (inspect.scheduled() or {}).values():  # type: ignore[union-attr]
             for task in tasks:
                 task_count[("scheduled", task["request"]["type"])] += 1
