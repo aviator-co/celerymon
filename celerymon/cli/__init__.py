@@ -21,8 +21,11 @@ def run():
     parser.add_argument("--worker-inspect-interval-sec", type=int, default=10)
     parser.add_argument("--redis-watch-interval-sec", type=int, default=10)
     parser.add_argument("--healthz-unhealthy-threshold-sec", type=int, default=300)
+    parser.add_argument("--success-task-runtime-buckets", type=str)
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
+
+    buckets = parse_histogram_buckets(args.success_task_runtime_buckets)
 
     app = celery.Celery("", broker=args.broker_url)
     redis_client = redis.StrictRedis.from_url(args.broker_url)
@@ -31,7 +34,9 @@ def run():
     celerymon.start_celerymon_worker_inspector(
         app, args.worker_inspect_interval_sec, ts_reporter=ts_reporter
     )
-    celerymon.start_celerymon_event_receiver(app, ts_reporter=ts_reporter)
+    celerymon.start_celerymon_event_receiver(
+        app, buckets=buckets, ts_reporter=ts_reporter
+    )
     celerymon.start_celerymon_redis_watcher(
         redis_client,
         args.redis_watch_interval_sec,
@@ -58,6 +63,15 @@ def run():
     with wsgiref.simple_server.make_server("", args.port, healthz_wrapper) as httpd:
         print(f"Serving on port {args.port}...")
         httpd.serve_forever()
+
+
+def parse_histogram_buckets(arg: T.Optional[str]) -> T.Sequence[float]:
+    if not arg:
+        return prometheus_client.Histogram.DEFAULT_BUCKETS
+    buckets = list()
+    for bucket_str in arg.split(","):
+        buckets.append(float(bucket_str.strip()))
+    return tuple(buckets)
 
 
 def check_health(
