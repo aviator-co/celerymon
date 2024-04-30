@@ -1,8 +1,8 @@
-FROM python:3.11-slim-bookworm as base
+FROM python:3.12-slim-bookworm as base
 
 FROM base as builder
 
-RUN pip install poetry==1.6.1
+RUN pip install poetry==1.8.2
 
 ENV POETRY_VIRTUALENVS_IN_PROJECT=1 \
     POETRY_CACHE_DIR=/tmp/poetry_cache

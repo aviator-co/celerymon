@@ -3,9 +3,9 @@
 
 import argparse
 import datetime
-import typing as T
 import wsgiref.simple_server
 import wsgiref.types
+from typing import Iterable, Sequence
 
 import celery
 import prometheus_client
@@ -49,7 +49,7 @@ def run():
     def healthz_wrapper(
         environ: wsgiref.types.WSGIEnvironment,
         start_response: wsgiref.types.StartResponse,
-    ) -> T.Iterable[bytes]:
+    ) -> Iterable[bytes]:
         if environ["PATH_INFO"] == "/healthz":
             stat = check_health(ts_reporter, args.healthz_unhealthy_threshold_sec)
             if stat == "":
@@ -65,7 +65,7 @@ def run():
         httpd.serve_forever()
 
 
-def parse_histogram_buckets(arg: T.Optional[str]) -> T.Sequence[float]:
+def parse_histogram_buckets(arg: str | None) -> Sequence[float]:
     if not arg:
         return prometheus_client.Histogram.DEFAULT_BUCKETS
     buckets = list()
