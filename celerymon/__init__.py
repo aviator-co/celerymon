@@ -4,7 +4,7 @@
 import collections
 import datetime
 import threading
-import typing as T
+from typing import Any, Iterable, Sequence
 
 import celery
 import celery.events  # type: ignore[import]
@@ -60,11 +60,10 @@ def format_key(queue_name: str, priority: int) -> str:
 def start_celerymon_redis_watcher(
     client: redis.StrictRedis,
     interval: float,
-    queues: T.Iterable[str],
-    registry: T.Optional[
-        prometheus_client.registry.CollectorRegistry
-    ] = prometheus_client.REGISTRY,
-    ts_reporter: T.Optional[LastUpdatedTimestampReporter] = None,
+    queues: Iterable[str],
+    registry: prometheus_client.registry.CollectorRegistry
+    | None = prometheus_client.REGISTRY,
+    ts_reporter: LastUpdatedTimestampReporter | None = None,
 ) -> threading.Timer:
     """Start the monitoring task that uses Redis API directly."""
     last_updated_timestamp_seconds = prometheus_client.Gauge(
@@ -83,7 +82,7 @@ def start_celerymon_redis_watcher(
     )
 
     def update() -> None:
-        lengths: T.Dict[T.Tuple[str, int], float] = {}
+        lengths: dict[tuple[str, int], float] = {}
         for queue_name in queues:
             for priority in PRIORITY_STEPS:
                 key = format_key(queue_name, priority)
@@ -105,10 +104,9 @@ def start_celerymon_redis_watcher(
 def start_celerymon_worker_inspector(
     app: celery.Celery,
     interval: float,
-    registry: T.Optional[
-        prometheus_client.registry.CollectorRegistry
-    ] = prometheus_client.REGISTRY,
-    ts_reporter: T.Optional[LastUpdatedTimestampReporter] = None,
+    registry: prometheus_client.registry.CollectorRegistry
+    | None = prometheus_client.REGISTRY,
+    ts_reporter: LastUpdatedTimestampReporter | None = None,
 ) -> threading.Timer:
     """Start the monitoring task that uses Celery worker inspection API."""
     inspect = app.control.inspect()
@@ -136,8 +134,8 @@ def start_celerymon_worker_inspector(
     )
 
     def update() -> None:
-        oldest_timestamp_seconds: T.Dict[str, float] = dict()
-        task_count: T.Dict[T.Tuple[str, str], float] = collections.defaultdict(float)
+        oldest_timestamp_seconds: dict[str, float] = dict()
+        task_count: dict[tuple[str, str], float] = collections.defaultdict(float)
 
         # active(), reserved() and scheduled() have wrong type annotations.
         for tasks in (inspect.active() or {}).values():  # type: ignore[union-attr]
@@ -157,9 +155,9 @@ def start_celerymon_worker_inspector(
         for tasks in (inspect.reserved() or {}).values():  # type: ignore[union-attr]
             for task in tasks:
                 task_count[("reserved", task["type"])] += 1
-        for tasks in (inspect.scheduled() or {}).values():  # type: ignore[union-attr]
-            for task in tasks:
-                task_count[("scheduled", task["request"]["type"])] += 1
+        for scheduled_tasks in (inspect.scheduled() or {}).values():  # type: ignore[union-attr]
+            for scheduled_task in scheduled_tasks:
+                task_count[("scheduled", scheduled_task["request"]["type"])] += 1
 
         last_updated_timestamp_seconds.set_to_current_time()
         oldest_started_task_timestamp_seconds.clear()
@@ -179,13 +177,10 @@ def start_celerymon_worker_inspector(
 
 def start_celerymon_event_receiver(
     app: celery.Celery,
-    registry: T.Optional[
-        prometheus_client.registry.CollectorRegistry
-    ] = prometheus_client.REGISTRY,
-    buckets: T.Sequence[
-        T.Union[float, str]
-    ] = prometheus_client.Histogram.DEFAULT_BUCKETS,
-    ts_reporter: T.Optional[LastUpdatedTimestampReporter] = None,
+    registry: prometheus_client.registry.CollectorRegistry
+    | None = prometheus_client.REGISTRY,
+    buckets: Sequence[float | str] = prometheus_client.Histogram.DEFAULT_BUCKETS,
+    ts_reporter: LastUpdatedTimestampReporter | None = None,
 ) -> threading.Thread:
     """Start the monitoring task that uses Celery Event API."""
     store = EventStore(
@@ -217,13 +212,10 @@ class EventStore:
     def __init__(
         self,
         state: celery.events.state.State,
-        registry: T.Optional[
-            prometheus_client.registry.CollectorRegistry
-        ] = prometheus_client.REGISTRY,
-        buckets: T.Sequence[
-            T.Union[float, str]
-        ] = prometheus_client.Histogram.DEFAULT_BUCKETS,
-        ts_reporter: T.Optional[LastUpdatedTimestampReporter] = None,
+        registry: prometheus_client.registry.CollectorRegistry
+        | None = prometheus_client.REGISTRY,
+        buckets: Sequence[float | str] = prometheus_client.Histogram.DEFAULT_BUCKETS,
+        ts_reporter: LastUpdatedTimestampReporter | None = None,
     ):
         self._state = state
         self._last_received_timestamp_seconds = prometheus_client.Gauge(
@@ -250,7 +242,7 @@ class EventStore:
         )
         self._ts_reporter = ts_reporter
 
-    def on_event(self, event: T.Dict[str, T.Any]):
+    def on_event(self, event: dict[str, Any]):
         if self._ts_reporter:
             self._ts_reporter.event_updated()
 
