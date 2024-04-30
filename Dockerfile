@@ -1,26 +1,17 @@
-FROM python:3.12-slim-bookworm as base
-
-FROM base as builder
-
-RUN pip install poetry==1.8.2
-
-ENV POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
-
+FROM python:3.12-bookworm as builder
 WORKDIR /app
+ENV RYE_HOME="/opt/rye"
+ENV UV_CACHE_DIR="/opt/uv_cache"
+ENV PATH="$RYE_HOME/shims:$PATH"
 
-COPY README.md pyproject.toml poetry.lock /app
-COPY celerymon /app/celerymon
+RUN curl -sSf https://rye-up.com/get | RYE_NO_AUTO_INSTALL=1 RYE_INSTALL_OPTION="--yes" bash
+COPY . .
+RUN --mount=type=cache,target=/opt/uv_cache rye build --wheel --clean
 
-RUN poetry install --without dev && rm -rf $POETRY_CACHE_DIR
-RUN find /app
+FROM python:3.12-slim-bookworm as runtime
 
-FROM base as runtime
+RUN --mount=type=bind,source=./requirements.lock,target=/deps/requirements.lock PYTHONDONTWRITEBYTECODE=1 grep -v "-e file:." /deps/requirements.lock | pip install --no-cache-dir -r /dev/stdin
+RUN --mount=type=bind,from=builder,source=/app/dist,target=/dist PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir /dist/*.whl
 
-ENV PROMETHEUS_DISABLE_CREATED_SERIES=true \
-    VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
-
-COPY --from=builder /app /app
-
+ENV PROMETHEUS_DISABLE_CREATED_SERIES=true
 ENTRYPOINT ["celerymon"]
