@@ -11,7 +11,10 @@ import celery
 import prometheus_client
 import redis
 
-import celerymon
+from celerymon.event_watcher import EventWatcher
+from celerymon.metrics import Collector
+from celerymon.redis_watcher import RedisWatcher
+from celerymon.worker_watcher import WorkerWatcher
 
 
 def run():
@@ -29,36 +32,42 @@ def run():
 
     app = celery.Celery("", broker=args.broker_url)
     redis_client = redis.StrictRedis.from_url(args.broker_url)
-    ts_reporter = celerymon.LastUpdatedTimestampReporter()
 
-    celerymon.start_celerymon_worker_inspector(
-        app, args.worker_inspect_interval_sec, ts_reporter=ts_reporter
+    redis_watcher = RedisWatcher.create_started(
+        redis_client, args.queue, args.redis_watch_interval_sec
     )
-    celerymon.start_celerymon_event_receiver(
-        app, buckets=buckets, ts_reporter=ts_reporter
+    worker_watcher = WorkerWatcher.create_started(app, args.worker_inspect_interval_sec)
+    event_watcher = EventWatcher.create_started(
+        app,
+        # This has a wrong type annotation.
+        app.events.State(),  # type: ignore[attr-defined]
+        buckets,
     )
-    celerymon.start_celerymon_redis_watcher(
-        redis_client,
-        args.redis_watch_interval_sec,
-        args.queue,
-        ts_reporter=ts_reporter,
-    )
+    collector = Collector(redis_watcher, worker_watcher, event_watcher)
 
-    app = prometheus_client.make_wsgi_app()
+    registry = prometheus_client.CollectorRegistry()
+    registry.register(collector)
+
+    prom_app = prometheus_client.make_wsgi_app(registry)
 
     def healthz_wrapper(
         environ: wsgiref.types.WSGIEnvironment,
         start_response: wsgiref.types.StartResponse,
     ) -> Iterable[bytes]:
         if environ["PATH_INFO"] == "/healthz":
-            stat = check_health(ts_reporter, args.healthz_unhealthy_threshold_sec)
+            stat = _check_health(
+                redis_watcher,
+                worker_watcher,
+                event_watcher,
+                args.healthz_unhealthy_threshold_sec,
+            )
             if stat == "":
                 start_response("200 OK", [("", "")])
                 return [b"OK"]
             start_response("500 Internal Server Error", [("", "")])
             return [stat.encode("utf-8")]
 
-        return app(environ, start_response)
+        return prom_app(environ, start_response)
 
     with wsgiref.simple_server.make_server("", args.port, healthz_wrapper) as httpd:
         print(f"Serving on port {args.port}...")
@@ -74,28 +83,33 @@ def parse_histogram_buckets(arg: str | None) -> Sequence[float]:
     return tuple(buckets)
 
 
-def check_health(
-    ts_reporter: celerymon.LastUpdatedTimestampReporter, threshold_sec: int
+def _check_health(
+    redis_watcher: RedisWatcher,
+    worker_watcher: WorkerWatcher,
+    event_watcher: EventWatcher,
+    threshold_sec: int,
 ) -> str:
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(tz=datetime.UTC)
 
     status = []
     if (
-        not ts_reporter.redis_last_updated
-        or (now - ts_reporter.redis_last_updated).seconds > threshold_sec
+        redis_watcher.last_updated_timestamp
+        and (now - redis_watcher.last_updated_timestamp).seconds > threshold_sec
     ):
-        status.append(f"Redis data is too old ({ts_reporter.redis_last_updated})")
+        status.append(f"Redis data is too old ({redis_watcher.last_updated_timestamp})")
     if (
-        not ts_reporter.worker_inspect_last_updated
-        or (now - ts_reporter.worker_inspect_last_updated).seconds > threshold_sec
+        worker_watcher.last_updated_timestamp
+        and (now - worker_watcher.last_updated_timestamp).seconds > threshold_sec
     ):
         status.append(
-            f"Worker inspection data is too old ({ts_reporter.worker_inspect_last_updated})"
+            f"Worker inspection data is too old ({worker_watcher.last_updated_timestamp})"
         )
     if (
-        not ts_reporter.event_last_updated
-        or (now - ts_reporter.event_last_updated).seconds > threshold_sec
+        event_watcher.last_received_timestamp
+        and (now - event_watcher.last_received_timestamp).seconds > threshold_sec
     ):
-        status.append(f"Event data is too old ({ts_reporter.event_last_updated})")
+        status.append(
+            f"Event data is too old ({event_watcher.last_received_timestamp})"
+        )
 
     return "\r\n".join(status)
