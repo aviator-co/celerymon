@@ -6,11 +6,13 @@
 #   features: []
 #   all-features: false
 #   with-sources: false
+#   generate-hashes: false
+#   universal: false
 
 -e file:.
 amqp==5.2.0
     # via kombu
-billiard==4.2.0
+billiard==4.2.1
     # via celery
 celery==5.4.0
     # via celerymon
@@ -25,20 +27,21 @@ click-plugins==1.1.1
     # via celery
 click-repl==0.3.0
     # via celery
-kombu==5.3.7
+kombu==5.4.2
     # via celery
-prometheus-client==0.20.0
+prometheus-client==0.21.0
     # via celerymon
-prompt-toolkit==3.0.43
+prompt-toolkit==3.0.47
     # via click-repl
 python-dateutil==2.9.0.post0
     # via celery
-redis==5.0.4
+redis==5.0.8
     # via celery
 six==1.16.0
     # via python-dateutil
 tzdata==2024.1
     # via celery
+    # via kombu
 vine==5.1.0
     # via amqp
     # via celery
