@@ -6,16 +6,18 @@
 #   features: []
 #   all-features: false
 #   with-sources: false
+#   generate-hashes: false
+#   universal: false
 
 -e file:.
 amqp==5.2.0
     # via kombu
-billiard==4.2.0
+billiard==4.2.1
     # via celery
 celery==5.4.0
     # via celerymon
 celery-types==0.22.0
-cffi==1.16.0
+cffi==1.17.1
     # via cryptography
 click==8.1.7
     # via celery
@@ -28,38 +30,39 @@ click-plugins==1.1.1
     # via celery
 click-repl==0.3.0
     # via celery
-cryptography==42.0.5
+cryptography==43.0.1
     # via types-pyopenssl
     # via types-redis
-kombu==5.3.7
+kombu==5.4.2
     # via celery
-mypy==1.10.0
+mypy==1.11.2
 mypy-extensions==1.0.0
     # via mypy
-prometheus-client==0.20.0
+prometheus-client==0.21.0
     # via celerymon
-prompt-toolkit==3.0.43
+prompt-toolkit==3.0.47
     # via click-repl
 pycparser==2.22
     # via cffi
 python-dateutil==2.9.0.post0
     # via celery
-redis==5.0.4
+redis==5.0.8
     # via celery
 six==1.16.0
     # via python-dateutil
 types-cffi==1.16.0.20240331
     # via types-pyopenssl
-types-pyopenssl==24.1.0.20240425
+types-pyopenssl==24.1.0.20240722
     # via types-redis
-types-redis==4.6.0.20240425
-types-setuptools==69.5.0.20240423
+types-redis==4.6.0.20240903
+types-setuptools==75.1.0.20240917
     # via types-cffi
-typing-extensions==4.11.0
+typing-extensions==4.12.2
     # via celery-types
     # via mypy
 tzdata==2024.1
     # via celery
+    # via kombu
 vine==5.1.0
     # via amqp
     # via celery
