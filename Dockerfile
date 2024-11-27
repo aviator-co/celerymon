@@ -1,17 +1,17 @@
-FROM python:3.12-bookworm as builder
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
 WORKDIR /app
-ENV RYE_HOME="/opt/rye"
-ENV UV_CACHE_DIR="/opt/uv_cache"
-ENV PATH="$RYE_HOME/shims:$PATH"
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 
-RUN curl -sSf https://rye-up.com/get | RYE_NO_AUTO_INSTALL=1 RYE_INSTALL_OPTION="--yes" bash
-COPY . .
-RUN --mount=type=cache,target=/opt/uv_cache rye build --wheel --clean
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev
+ADD . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
-FROM python:3.12-slim-bookworm as runtime
+ENV PATH="/app/.venv/bin:$PATH"
 
-RUN --mount=type=bind,source=./requirements.lock,target=/deps/requirements.lock PYTHONDONTWRITEBYTECODE=1 grep -v "-e file:." /deps/requirements.lock | pip install --no-cache-dir -r /dev/stdin
-RUN --mount=type=bind,from=builder,source=/app/dist,target=/dist PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir /dist/*.whl
-
-ENV PROMETHEUS_DISABLE_CREATED_SERIES=true
-ENTRYPOINT ["celerymon"]
+ENTRYPOINT ["uv", "run", "celerymon"]
