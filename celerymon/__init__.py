@@ -33,13 +33,13 @@ class LastUpdatedTimestampReporter:
         self.event_last_updated = None
 
     def redis_updated(self):
-        self.redis_last_updated = datetime.datetime.utcnow()
+        self.redis_last_updated = datetime.datetime.now(datetime.UTC)
 
     def worker_inspect_updated(self):
-        self.worker_inspect_last_updated = datetime.datetime.utcnow()
+        self.worker_inspect_last_updated = datetime.datetime.now(datetime.UTC)
 
     def event_updated(self):
-        self.event_last_updated = datetime.datetime.utcnow()
+        self.event_last_updated = datetime.datetime.now(datetime.UTC)
 
 
 def format_key(queue_name: str, priority: int) -> str:
@@ -54,7 +54,7 @@ def format_key(queue_name: str, priority: int) -> str:
     """
     if not priority:
         return queue_name
-    return "{0}{1}{2}".format(queue_name, PRIORITY_SEP, priority)
+    return "{}{}{}".format(queue_name, PRIORITY_SEP, priority)
 
 
 def start_celerymon_redis_watcher(
