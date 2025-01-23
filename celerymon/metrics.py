@@ -100,7 +100,7 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
         for key, count in watcher.task_count.items():
-            task_name, state = key
+            state, task_name = key
             active_task_count_metric.add_metric(
                 labels=[task_name, state],
                 value=count,
