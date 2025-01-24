@@ -155,7 +155,7 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
             success_task_runtime_seconds_metric.add_metric(
                 labels=[task_name],
                 buckets=buckets,
-                sum_value=None,
+                sum_value=watcher.succeeded_task_runtime_sec_sum[task_name],
                 timestamp=watcher.last_received_timestamp.timestamp(),
             )
     return [
