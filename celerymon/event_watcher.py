@@ -19,6 +19,7 @@ class EventWatcher:
     upper_bounds: list[float]
     task_names: set[str]
     succeeded_task_runtime_sec: list[dict[str, int]]
+    succeeded_task_runtime_sec_sum: dict[str, float]
 
     @classmethod
     def create_started(
@@ -61,6 +62,7 @@ class EventWatcher:
         self.last_received_timestamp_per_task_event = dict()
         self.num_events_per_task_count = defaultdict(int)
         self.succeeded_task_runtime_sec = []
+        self.succeeded_task_runtime_sec_sum = defaultdict(float)
         for _ in range(0, len(self.upper_bounds)):
             self.succeeded_task_runtime_sec.append(defaultdict(int))
 
@@ -84,6 +86,7 @@ class EventWatcher:
             # Not documented, but looking into the Celery codebase, the runtime
             # looks like seconds.
             runtime_sec = event["runtime"]
+            self.succeeded_task_runtime_sec_sum[task_name] += runtime_sec
             for i, bound in enumerate(self.upper_bounds):
                 if runtime_sec <= bound:
                     self.succeeded_task_runtime_sec[i][task_name] += 1
