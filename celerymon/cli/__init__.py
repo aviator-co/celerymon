@@ -62,9 +62,9 @@ def run():
                 args.healthz_unhealthy_threshold_sec,
             )
             if stat == "":
-                start_response("200 OK", [("", "")])
+                start_response("200 OK", [])
                 return [b"OK"]
-            start_response("500 Internal Server Error", [("", "")])
+            start_response("500 Internal Server Error", [])
             return [stat.encode("utf-8")]
 
         return prom_app(environ, start_response)
