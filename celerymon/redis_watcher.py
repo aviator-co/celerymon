@@ -60,4 +60,4 @@ class RedisWatcher:
         """
         if not priority:
             return queue_name
-        return "{0}{1}{2}".format(queue_name, PRIORITY_SEP, priority)
+        return f"{queue_name}{PRIORITY_SEP}{priority}"

@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict, defaultdict
 from typing import Any, Sequence
 
-import celery  # type: ignore[import]
+import celery
 
 from .timer import RepeatTimer
 
@@ -40,7 +40,7 @@ class EventWatcher:
             while True:
                 try:
                     with app.connection() as conn:
-                        recv = app.events.Receiver(conn, handlers={"*": store.on_event})  # type: ignore[attr-defined]
+                        recv = app.events.Receiver(conn, handlers={"*": store.on_event})
                         logger.info("EventWatcher connected, capturing events")
                         backoff = 1.0
                         recv.capture(limit=None)
@@ -62,7 +62,9 @@ class EventWatcher:
         timer.daemon = True
         timer.start()
 
-        thread = threading.Thread(target=run, daemon=True, name="celerymon-event-watcher")
+        thread = threading.Thread(
+            target=run, daemon=True, name="celerymon-event-watcher"
+        )
         thread.start()
 
         return store
