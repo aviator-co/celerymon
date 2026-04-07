@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 
 import datetime
+import logging
 import threading
+import time
 from collections import defaultdict
 from typing import Any, Sequence
 
@@ -10,6 +12,8 @@ import celery.events  # type: ignore[import]
 import celery.events.state  # type: ignore[import]
 
 from .timer import RepeatTimer
+
+logger = logging.getLogger(__name__)
 
 
 class EventWatcher:
@@ -31,18 +35,34 @@ class EventWatcher:
         store = cls(state, buckets)
 
         def run() -> None:
-            with app.connection() as conn:
-                # This has a wrong type annotation.
-                recv = app.events.Receiver(conn, handlers={"*": store.on_event})  # type: ignore[attr-defined]
-                recv.capture(limit=None)
+            backoff = 1.0
+            max_backoff = 60.0
+            while True:
+                try:
+                    with app.connection() as conn:
+                        recv = app.events.Receiver(conn, handlers={"*": store.on_event})  # type: ignore[attr-defined]
+                        logger.info("EventWatcher connected, capturing events")
+                        backoff = 1.0
+                        recv.capture(limit=None)
+                except Exception:
+                    logger.exception(
+                        "EventWatcher connection lost, reconnecting in %.1fs",
+                        backoff,
+                    )
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
 
         def update_enable_event() -> None:
-            app.control.enable_events()
+            try:
+                app.control.enable_events()
+            except Exception:
+                logger.exception("Failed to enable events")
 
         timer = RepeatTimer(10, update_enable_event)
+        timer.daemon = True
         timer.start()
 
-        thread = threading.Thread(target=run)
+        thread = threading.Thread(target=run, daemon=True, name="celerymon-event-watcher")
         thread.start()
 
         return store
