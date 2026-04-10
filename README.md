@@ -1,6 +1,6 @@
 # celerymon
 
-celerymon is a server that exposes Prometheus metrics for Celery tasks.
+celerymon is a server that exposes Prometheus metrics for Celery workers and tasks.
 
 ## Motivation
 
