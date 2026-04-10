@@ -98,4 +98,4 @@ endpoint.
 
 ## Stability
 
-This is created Sep 2023. It's a new effort.
+This was created Sep 2023. It's a new effort.
