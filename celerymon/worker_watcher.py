@@ -39,8 +39,7 @@ class WorkerWatcher:
         oldest_timestamp: dict[str, datetime.datetime] = dict()
         task_count: dict[tuple[str, str], int] = defaultdict(int)
 
-        # active(), reserved() and scheduled() have wrong type annotations.
-        for tasks in (self._inspect.active() or {}).values():  # type: ignore[union-attr]
+        for tasks in (self._inspect.active() or {}).values():
             for task in tasks:
                 if isinstance(task["time_start"], str):
                     start_time = datetime.datetime.fromisoformat(task["time_start"])
@@ -54,10 +53,10 @@ class WorkerWatcher:
                     oldest_timestamp[task_name] = min(
                         oldest_timestamp[task_name], start_time
                     )
-        for tasks in (self._inspect.reserved() or {}).values():  # type: ignore[union-attr]
+        for tasks in (self._inspect.reserved() or {}).values():
             for task in tasks:
                 task_count[("reserved", task["type"])] += 1
-        for scheduled_tasks in (self._inspect.scheduled() or {}).values():  # type: ignore[union-attr]
+        for scheduled_tasks in (self._inspect.scheduled() or {}).values():
             for scheduled_task in scheduled_tasks:
                 task_count[("scheduled", scheduled_task["request"]["type"])] += 1
 

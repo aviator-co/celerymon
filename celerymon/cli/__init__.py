@@ -37,12 +37,7 @@ def run():
         redis_client, args.queue, args.redis_watch_interval_sec
     )
     worker_watcher = WorkerWatcher.create_started(app, args.worker_inspect_interval_sec)
-    event_watcher = EventWatcher.create_started(
-        app,
-        # This has a wrong type annotation.
-        app.events.State(),  # type: ignore[attr-defined]
-        buckets,
-    )
+    event_watcher = EventWatcher.create_started(app, buckets)
     collector = Collector(redis_watcher, worker_watcher, event_watcher)
 
     registry = prometheus_client.CollectorRegistry()

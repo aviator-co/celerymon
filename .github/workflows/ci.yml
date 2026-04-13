@@ -1,0 +1,45 @@
+name: ci
+
+on: pull_request
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - uses: pre-commit/action@v3.0.1
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - run: uv run mypy celerymon/
+
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@v0.5.2

@@ -26,9 +26,10 @@ There are three ways to observe Celery:
 * Using the Celery events.
 
   Worker and task senders are optionally configured to send events. This
-  requires an opt-in, but is real-time. Since this is an event stream, if an
-  event consumer (like this monitoring tool) restarts, it won't be able to see
-  the previous or current stats.
+  requires an opt-in, but is real-time. celerymon maintains a lightweight
+  UUID to task name cache (rather than using Celery's built-in State object)
+  to keep memory usage bounded. If the connection drops, celerymon
+  automatically reconnects with exponential backoff.
 
 These three can cover different areas. By querying the broker directly, we can
 get the queued items stats. By using the worker inspection API, we can get the
@@ -46,6 +47,10 @@ on the finished tasks. celerymon uses all these three to get the data.
   this means there can be a time gap between workers' start and reconfiguration.
   During this gap, the worker won't send events, which makes a hole in
   monitoring. If possible, configure workers to send events from the beginning.
+
+* If the event stream connection drops, celerymon will automatically reconnect
+  with exponential backoff (up to 60s). During the reconnection window, events
+  will be missed.
 
 * This is not specific to celerymon, but in general, this type of monitoring
   tools are not suited for short-lived ephemeral containers, such as Cloud Run.
@@ -79,23 +84,30 @@ See the source code for the metric descriptions as well.
 
 ```
 celerymon --broker-url=BROKER_URL
-          --queue=QUEUE_NAME
+          --queue=QUEUE_NAME [--queue=QUEUE_NAME ...]
           [--worker-inspect-interval-sec=10]
           [--redis-watch-interval-sec=10]
           [--healthz-unhealthy-threshold-sec=300]
+          [--success-task-runtime-buckets=BUCKETS]
           [--port=8000]
 ```
 
+To monitor multiple queues, repeat the `--queue` flag:
+
+```
+celerymon --broker-url=redis://localhost:6379/0 --queue=celery --queue=agent
+```
+
+`--success-task-runtime-buckets` accepts a comma-separated list of bucket
+boundaries in seconds (e.g. `0.1,0.5,1,5,10`). If not specified, the default
+Prometheus histogram buckets are used.
+
 ### Note on /healthz
 
-We recognize that Celery event stops working at some point for reasons unknown.
-To address this, celerymon serves /healthz that you can use as a health check
-endpoint that reacts to the inactivity. As described above, celerymon uses three
+celerymon serves /healthz as a health check endpoint that reacts to data source
+inactivity. While the event watcher now auto-reconnects, other data sources
+(Redis, worker inspection) may still stall. celerymon uses three
 data sources for providing the data. If one of them cannot be updated for
 `--healthz-unhealthy-threshold-sec`, this endpoint returns 500. You can
 configure your container management tool to restart the container based on this
 endpoint.
-
-## Stability
-
-This is created Sep 2023. It's a new effort.
