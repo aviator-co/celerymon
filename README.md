@@ -63,16 +63,17 @@ on the finished tasks. celerymon uses all these three to get the data.
 
 ## Metrics
 
-| Name                                                      | Type      | Labels                    |
-|-----------------------------------------------------------|-----------|---------------------------|
-| `celerymon_redis_last_updated_timestamp_seconds`          | Gauge     |                           |
-| `celerymon_redis_queue_item_count`                        | Gauge     | `queue_name`, `priority`  |
-| `celerymon_inspect_last_updated_timestamp_seconds`        | Gauge     |                           |
-| `celerymon_inspect_oldest_started_task_timestamp_seconds` | Gauge     | `task_name`               |
-| `celerymon_inspect_worker_held_task_count`                | Gauge     | `task_name`, `state`      |
-| `celerymon_events_last_received_timestamp_seconds`        | Gauge     | `task_name`, `event_name` |
-| `celerymon_events_count`                                  | Counter   | `task_name`, `event_name` |
-| `celerymon_events_success_task_runtime_seconds`           | Histogram | `task_name`               |
+| Name                                                      | Type      | Labels                           |
+|-----------------------------------------------------------|-----------|----------------------------------|
+| `celerymon_redis_last_updated_timestamp_seconds`          | Gauge     |                                  |
+| `celerymon_redis_queue_item_count`                        | Gauge     | `queue_name`, `priority`         |
+| `celerymon_inspect_last_updated_timestamp_seconds`        | Gauge     |                                  |
+| `celerymon_inspect_oldest_started_task_timestamp_seconds` | Gauge     | `task_name`                      |
+| `celerymon_inspect_worker_held_task_count`                | Gauge     | `task_name`, `state`, `hostname` |
+| `celerymon_events_last_received_timestamp_seconds`        | Gauge     | `task_name`, `event_name`        |
+| `celerymon_events_count`                                  | Counter   | `task_name`, `event_name`        |
+| `celerymon_events_task_runtime_seconds`                   | Histogram | `task_name`, `result`            |
+| `celerymon_events_online_worker_count`                    | Gauge     |                                  |
 
 There are timestamp metrics. These are meant to be used for checking the
 monitoring health. If this stops updating, it means that the monitoring cannot

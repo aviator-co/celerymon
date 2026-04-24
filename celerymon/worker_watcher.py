@@ -14,7 +14,7 @@ from .timer import RepeatTimer
 class WorkerWatcher:
     last_updated_timestamp: datetime.datetime | None
     oldest_started_task_timestamp: dict[str, datetime.datetime]
-    task_count: dict[tuple[str, str], int]
+    task_count: dict[tuple[str, str, str], int]
 
     @classmethod
     def create_started(
@@ -37,28 +37,30 @@ class WorkerWatcher:
 
     def _update(self) -> None:
         oldest_timestamp: dict[str, datetime.datetime] = dict()
-        task_count: dict[tuple[str, str], int] = defaultdict(int)
+        task_count: dict[tuple[str, str, str], int] = defaultdict(int)
 
-        for tasks in (self._inspect.active() or {}).values():
+        for hostname, tasks in (self._inspect.active() or {}).items():
             for task in tasks:
                 if isinstance(task["time_start"], str):
                     start_time = datetime.datetime.fromisoformat(task["time_start"])
                 else:
                     start_time = datetime.datetime.fromtimestamp(task["time_start"])
                 task_name = task["type"]
-                task_count[("active", task_name)] += 1
+                task_count[("active", task_name, hostname)] += 1
                 if task_name not in oldest_timestamp:
                     oldest_timestamp[task_name] = start_time
                 else:
                     oldest_timestamp[task_name] = min(
                         oldest_timestamp[task_name], start_time
                     )
-        for tasks in (self._inspect.reserved() or {}).values():
+        for hostname, tasks in (self._inspect.reserved() or {}).items():
             for task in tasks:
-                task_count[("reserved", task["type"])] += 1
-        for scheduled_tasks in (self._inspect.scheduled() or {}).values():
+                task_count[("reserved", task["type"], hostname)] += 1
+        for hostname, scheduled_tasks in (self._inspect.scheduled() or {}).items():
             for scheduled_task in scheduled_tasks:
-                task_count[("scheduled", scheduled_task["request"]["type"])] += 1
+                task_count[
+                    ("scheduled", scheduled_task["request"]["type"], hostname)
+                ] += 1
 
         self.last_updated_timestamp = datetime.datetime.now(tz=datetime.UTC)
         self.oldest_started_task_timestamp = oldest_timestamp

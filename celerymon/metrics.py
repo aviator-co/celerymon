@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Iterable
 
 import prometheus_client
@@ -85,7 +86,7 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
     active_task_count_metric = GaugeMetricFamily(
         name="celerymon_inspect_worker_held_task_count",
         documentation="Number of tasks held in all workers",
-        labels=["task_name", "state"],
+        labels=["task_name", "state", "hostname"],
     )
     if watcher.last_updated_timestamp is not None:
         last_updated_timestamp_seconds_metric.add_metric(
@@ -100,9 +101,9 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
         for key, count in watcher.task_count.items():
-            state, task_name = key
+            state, task_name, hostname = key
             active_task_count_metric.add_metric(
-                labels=[task_name, state],
+                labels=[task_name, state, hostname],
                 value=count,
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
@@ -125,11 +126,20 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
         documentation="The task event count per task name and event name.",
         labels=["task_name", "event_name"],
     )
-    success_task_runtime_seconds_metric = HistogramMetricFamily(
-        name="celerymon_events_success_task_runtime_seconds",
-        documentation="The task runtime per task name for finished success tasks.",
-        labels=["task_name"],
+    task_runtime_seconds_metric = HistogramMetricFamily(
+        name="celerymon_events_task_runtime_seconds",
+        documentation=(
+            "Task runtime per task name, labeled by result (success|failed)."
+        ),
+        labels=["task_name", "result"],
         unit="seconds",
+    )
+    online_worker_count_metric = GaugeMetricFamily(
+        name="celerymon_events_online_worker_count",
+        documentation=(
+            "Number of workers currently online, derived from worker-online, "
+            "worker-heartbeat, and worker-offline events."
+        ),
     )
     if watcher.last_received_timestamp is not None:
         for key, timestamp in watcher.last_received_timestamp_per_task_event.items():
@@ -147,19 +157,28 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
                 timestamp=timestamp.timestamp(),
             )
         for task_name in watcher.task_names:
-            acc = 0.0
-            buckets = []
-            for i, bound in enumerate(watcher.upper_bounds):
-                acc += watcher.succeeded_task_runtime_sec[i][task_name]
-                buckets.append((floatToGoString(bound), acc))
-            success_task_runtime_seconds_metric.add_metric(
-                labels=[task_name],
-                buckets=buckets,
-                sum_value=watcher.succeeded_task_runtime_sec_sum[task_name],
-                timestamp=watcher.last_received_timestamp.timestamp(),
-            )
+            for result in ("success", "failed"):
+                key = (task_name, result)
+                acc = 0.0
+                buckets = []
+                for i, bound in enumerate(watcher.upper_bounds):
+                    acc += watcher.task_runtime_sec[i].get(key, 0)
+                    buckets.append((floatToGoString(bound), acc))
+                task_runtime_seconds_metric.add_metric(
+                    labels=[task_name, result],
+                    buckets=buckets,
+                    sum_value=watcher.task_runtime_sec_sum.get(key, 0.0),
+                    timestamp=watcher.last_received_timestamp.timestamp(),
+                )
+        now = datetime.datetime.now(tz=datetime.UTC)
+        online_worker_count_metric.add_metric(
+            labels=[],
+            value=watcher.online_worker_count(now),
+            timestamp=watcher.last_received_timestamp.timestamp(),
+        )
     return [
         last_received_timestamp_seconds_metric,
         events_count_metric,
-        success_task_runtime_seconds_metric,
+        task_runtime_seconds_metric,
+        online_worker_count_metric,
     ]

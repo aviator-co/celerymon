@@ -23,8 +23,8 @@ class EventWatcher:
     num_events_per_task_count: dict[tuple[str, str], int]
     upper_bounds: list[float]
     task_names: set[str]
-    succeeded_task_runtime_sec: list[dict[str, int]]
-    succeeded_task_runtime_sec_sum: dict[str, float]
+    task_runtime_sec: list[dict[tuple[str, str], int]]
+    task_runtime_sec_sum: dict[tuple[str, str], float]
 
     @classmethod
     def create_started(
@@ -71,6 +71,7 @@ class EventWatcher:
 
     def __init__(self, buckets: Sequence[float | str]):
         self._task_names_by_uuid: OrderedDict[str, str] = OrderedDict()
+        self._worker_last_heartbeat: dict[str, datetime.datetime] = dict()
 
         self.upper_bounds = [float(b) for b in buckets]
         if self.upper_bounds and self.upper_bounds[-1] != float("inf"):
@@ -81,16 +82,21 @@ class EventWatcher:
         self.last_received_timestamp = None
         self.last_received_timestamp_per_task_event = dict()
         self.num_events_per_task_count = defaultdict(int)
-        self.succeeded_task_runtime_sec = []
-        self.succeeded_task_runtime_sec_sum = defaultdict(float)
-        for _ in range(0, len(self.upper_bounds)):
-            self.succeeded_task_runtime_sec.append(defaultdict(int))
+        self.task_runtime_sec = [
+            defaultdict(int) for _ in range(len(self.upper_bounds))
+        ]
+        self.task_runtime_sec_sum = defaultdict(float)
 
     def on_event(self, event: dict[str, Any]):
         now = datetime.datetime.now(tz=datetime.UTC)
         self.last_received_timestamp = now
 
         event_name: str = event["type"]
+
+        if event_name.startswith("worker-"):
+            self._on_worker_event(event_name, event, now)
+            return
+
         if not event_name.startswith("task-"):
             return
 
@@ -108,10 +114,52 @@ class EventWatcher:
         self.num_events_per_task_count[(task_name, event_name)] += 1
 
         if event_name == "task-succeeded":
-            # Not documented, but looking into the Celery codebase, the runtime
-            # looks like seconds.
-            runtime_sec = event["runtime"]
-            self.succeeded_task_runtime_sec_sum[task_name] += runtime_sec
-            for i, bound in enumerate(self.upper_bounds):
-                if runtime_sec <= bound:
-                    self.succeeded_task_runtime_sec[i][task_name] += 1
+            self._record_task_runtime(task_name, "success", event)
+
+        if event_name == "task-failed":
+            self._record_task_runtime(task_name, "failed", event)
+
+    def _on_worker_event(
+        self,
+        event_name: str,
+        event: dict[str, Any],
+        now: datetime.datetime,
+    ) -> None:
+        hostname = event.get("hostname")
+        if not hostname:
+            return
+        if event_name == "worker-offline":
+            self._worker_last_heartbeat.pop(hostname, None)
+        else:
+            self._worker_last_heartbeat[hostname] = now
+
+    def online_worker_count(
+        self,
+        now: datetime.datetime,
+        ttl_sec: int = 120,
+    ) -> int:
+        cutoff = now - datetime.timedelta(seconds=ttl_sec)
+        return sum(1 for ts in self._worker_last_heartbeat.values() if ts > cutoff)
+
+    def _record_task_runtime(
+        self,
+        task_name: str,
+        result: str,
+        event: dict[str, Any],
+    ) -> None:
+        # Celery sets `runtime` (seconds) on task-succeeded consistently, and on
+        # task-failed when the task actually ran. Defensive `.get()` handles
+        # failure modes where the task never executed.
+        runtime_sec = event.get("runtime")
+        if runtime_sec is None:
+            logger.debug(
+                "task event missing runtime field; task_name=%s result=%s",
+                task_name,
+                result,
+            )
+            return
+        key = (task_name, result)
+        self.task_runtime_sec_sum[key] += runtime_sec
+        for i, bound in enumerate(self.upper_bounds):
+            if runtime_sec <= bound:
+                self.task_runtime_sec[i][key] += 1
