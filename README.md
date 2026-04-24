@@ -74,6 +74,10 @@ on the finished tasks. celerymon uses all these three to get the data.
 | `celerymon_events_count`                                  | Counter   | `task_name`, `event_name`        |
 | `celerymon_events_task_runtime_seconds`                   | Histogram | `task_name`, `result`            |
 | `celerymon_events_online_worker_count`                    | Gauge     |                                  |
+| `celerymon_events_queue_wait_seconds`                     | Histogram | `task_name`                      |
+| `celerymon_events_oldest_queued_task_age_seconds`         | Gauge     | `queue_name`                     |
+| `celerymon_events_in_flight_evicted`                      | Counter   | `reason`                         |
+| `celerymon_events_in_flight_cache_size`                   | Gauge     |                                  |
 
 There are timestamp metrics. These are meant to be used for checking the
 monitoring health. If this stops updating, it means that the monitoring cannot
@@ -90,6 +94,9 @@ celerymon --broker-url=BROKER_URL
           [--redis-watch-interval-sec=10]
           [--healthz-unhealthy-threshold-sec=300]
           [--success-task-runtime-buckets=BUCKETS]
+          [--queue-wait-buckets=BUCKETS]
+          [--in-flight-cache-size=100000]
+          [--in-flight-ttl-sec=3600]
           [--port=8000]
 ```
 
@@ -99,9 +106,25 @@ To monitor multiple queues, repeat the `--queue` flag:
 celerymon --broker-url=redis://localhost:6379/0 --queue=celery --queue=agent
 ```
 
-`--success-task-runtime-buckets` accepts a comma-separated list of bucket
-boundaries in seconds (e.g. `0.1,0.5,1,5,10`). If not specified, the default
-Prometheus histogram buckets are used.
+`--success-task-runtime-buckets` defines the histogram buckets for task
+runtime. Defaults to log-uniform buckets spanning 10ms to ~50 minutes
+(`0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000`), chosen to capture both
+fast webhook-style tasks and long-running batch work.
+
+`--queue-wait-buckets` defines the histogram buckets for queue wait time
+(time from task-sent to task-started). Defaults to log-uniform buckets
+spanning 3ms to ~17 minutes (`0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000`),
+with extra sub-10ms resolution for distinguishing healthy queue states.
+
+`--in-flight-cache-size` caps the number of in-flight uuid→timestamp entries
+held for correlating task-sent with task-started. When the cap is hit, the
+oldest entry is evicted with reason `lru`.
+
+`--in-flight-ttl-sec` is the max age of an in-flight entry before it is
+treated as a zombie (task sent but never started or revoked) and evicted with
+reason `ttl`. Tasks whose `expires` timestamp passes are evicted earlier with
+reason `expired`. Eviction runs on a background timer every 30 seconds; metric
+scrapes stay pure reads.
 
 ### Note on /healthz
 
