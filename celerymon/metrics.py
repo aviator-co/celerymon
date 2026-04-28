@@ -204,13 +204,13 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
                     sum_value=watcher.task_runtime_sec_sum.get(key, 0.0),
                     timestamp=watcher.last_received_timestamp.timestamp(),
                 )
-            queue_wait_acc = 0.0
-            queue_wait_buckets_values: list[tuple[str, float]] = []
-            for i, bound in enumerate(watcher.queue_wait_upper_bounds):
-                queue_wait_acc += watcher.queue_wait_sec[i].get(task_name, 0)
-                queue_wait_buckets_values.append(
-                    (floatToGoString(bound), queue_wait_acc)
+            queue_wait_buckets_values: list[tuple[str, float]] = [
+                (
+                    floatToGoString(bound),
+                    watcher.queue_wait_sec[i].get(task_name, 0),
                 )
+                for i, bound in enumerate(watcher.queue_wait_upper_bounds)
+            ]
             queue_wait_seconds_metric.add_metric(
                 labels=[task_name],
                 buckets=queue_wait_buckets_values,
