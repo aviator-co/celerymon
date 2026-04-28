@@ -27,12 +27,12 @@ def run():
     parser.add_argument(
         "--success-task-runtime-buckets",
         type=str,
-        default="0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000",
+        default="0.01,0.05,0.1,0.5,1,5,10,30,60,300,600,1800",
     )
     parser.add_argument(
         "--queue-wait-buckets",
         type=str,
-        default="0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000",
+        default="0.005,0.01,0.05,0.1,0.5,1,5,10,60,300",
     )
     parser.add_argument("--in-flight-cache-size", type=int, default=100_000)
     parser.add_argument("--in-flight-ttl-sec", type=int, default=3600)
