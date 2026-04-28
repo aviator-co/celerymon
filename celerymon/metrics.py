@@ -142,8 +142,11 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
         ),
     )
     if watcher.last_received_timestamp is not None:
-        for key, timestamp in watcher.last_received_timestamp_per_task_event.items():
-            count = watcher.num_events_per_task_count[key]
+        last_received_items = list(
+            watcher.last_received_timestamp_per_task_event.items()
+        )
+        for key, timestamp in last_received_items:
+            count = watcher.num_events_per_task_count.get(key, 0)
 
             task_name, event_name = key
             last_received_timestamp_seconds_metric.add_metric(
@@ -156,7 +159,7 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
                 value=count,
                 timestamp=timestamp.timestamp(),
             )
-        for task_name in watcher.task_names:
+        for task_name in tuple(watcher.task_names):
             for result in ("success", "failed"):
                 key = (task_name, result)
                 buckets = [

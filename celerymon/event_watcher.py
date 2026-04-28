@@ -139,7 +139,8 @@ class EventWatcher:
         ttl_sec: int = 120,
     ) -> int:
         cutoff = now - datetime.timedelta(seconds=ttl_sec)
-        return sum(1 for ts in self._worker_last_heartbeat.values() if ts > cutoff)
+        heartbeats = tuple(self._worker_last_heartbeat.values())
+        return sum(1 for ts in heartbeats if ts > cutoff)
 
     def _record_task_runtime(
         self,
