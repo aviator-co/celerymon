@@ -107,24 +107,35 @@ celerymon --broker-url=redis://localhost:6379/0 --queue=celery --queue=agent
 ```
 
 `--success-task-runtime-buckets` defines the histogram buckets for task
-runtime. Defaults to log-uniform buckets spanning 10ms to ~50 minutes
-(`0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000`), chosen to capture both
-fast webhook-style tasks and long-running batch work.
+runtime. Defaults to `0.01,0.05,0.1,0.5,1,5,10,30,60,300,600,1800` (10ms to
+30 minutes), chosen to capture both fast webhook-style tasks and long-running
+batch work.
 
 `--queue-wait-buckets` defines the histogram buckets for queue wait time
-(time from task-sent to task-started). Defaults to log-uniform buckets
-spanning 3ms to ~17 minutes (`0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000`),
-with extra sub-10ms resolution for distinguishing healthy queue states.
+(time from task-sent to task-started). Defaults to
+`0.005,0.01,0.05,0.1,0.5,1,5,10,60,300` (5ms to 5 minutes), with extra
+sub-10ms resolution for distinguishing healthy queue states.
 
 `--in-flight-cache-size` caps the number of in-flight uuid→timestamp entries
-held for correlating task-sent with task-started. When the cap is hit, the
-oldest entry is evicted with reason `lru`.
+held for correlating task-sent with task-started.
 
 `--in-flight-ttl-sec` is the max age of an in-flight entry before it is
-treated as a zombie (task sent but never started or revoked) and evicted with
-reason `ttl`. Tasks whose `expires` timestamp passes are evicted earlier with
-reason `expired`. Eviction runs on a background timer every 30 seconds; metric
-scrapes stay pure reads.
+treated as a zombie (task sent but never started or revoked). Eviction runs
+on a background timer every 30 seconds; metric scrapes stay pure reads.
+
+The `celerymon_events_in_flight_evicted{reason}` counter tracks why entries
+left the in-flight cache:
+
+* `lru` — evicted on insertion because `--in-flight-cache-size` was reached.
+* `failed_pre_start` — `task-failed` event arrived for an entry that never
+  transitioned to `task-started`. Tasks that started and then failed are not
+  counted here.
+* `revoked_pre_start` — `task-revoked` event arrived for an entry that never
+  transitioned to `task-started`.
+* `expired` — the producer-set `expires` timestamp on the task passed.
+* `ttl` — the entry exceeded `--in-flight-ttl-sec`. Use this counter to alarm
+  on stuck queues; the `celerymon_events_oldest_queued_task_age_seconds`
+  gauge does not include entries past TTL.
 
 ### Note on /healthz
 
