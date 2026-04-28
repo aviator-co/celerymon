@@ -289,7 +289,7 @@ class EventWatcher:
         now_ts = now.timestamp()
         ttl_cutoff = now_ts - self._in_flight_ttl_sec
         ages: dict[str, float] = {}
-        for entry in self._in_flight.values():
+        for entry in tuple(self._in_flight.values()):
             if entry.expires_ts is not None and entry.expires_ts < now_ts:
                 continue
             if entry.sent_ts < ttl_cutoff:
