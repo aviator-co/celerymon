@@ -206,12 +206,8 @@ class EventWatcher:
         else:
             self._worker_last_heartbeat[hostname] = now
 
-    def online_worker_count(
-        self,
-        now: datetime.datetime,
-        ttl_sec: int = _WORKER_HEARTBEAT_TTL_SEC,
-    ) -> int:
-        cutoff = now - datetime.timedelta(seconds=ttl_sec)
+    def online_worker_count(self, now: datetime.datetime) -> int:
+        cutoff = now - datetime.timedelta(seconds=_WORKER_HEARTBEAT_TTL_SEC)
         heartbeats = tuple(self._worker_last_heartbeat.values())
         return sum(1 for ts in heartbeats if ts > cutoff)
 
