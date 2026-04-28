@@ -159,11 +159,13 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
         for task_name in watcher.task_names:
             for result in ("success", "failed"):
                 key = (task_name, result)
-                acc = 0.0
-                buckets = []
-                for i, bound in enumerate(watcher.upper_bounds):
-                    acc += watcher.task_runtime_sec[i].get(key, 0)
-                    buckets.append((floatToGoString(bound), acc))
+                buckets = [
+                    (
+                        floatToGoString(bound),
+                        watcher.task_runtime_sec[i].get(key, 0),
+                    )
+                    for i, bound in enumerate(watcher.upper_bounds)
+                ]
                 task_runtime_seconds_metric.add_metric(
                     labels=[task_name, result],
                     buckets=buckets,
