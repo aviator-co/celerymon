@@ -161,8 +161,13 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
     in_flight_evicted_metric = CounterMetricFamily(
         name="celerymon_events_in_flight_evicted",
         documentation=(
-            "Count of in-flight entries evicted by reason: failed, revoked, "
-            "expired, ttl (exceeded max age), lru (cache cap hit)."
+            "Count of in-flight entries evicted from the task-sent/task-started "
+            "correlation cache, labeled by reason. lru: cache cap hit. "
+            "failed_pre_start: task-failed arrived for an entry that never "
+            "reached task-started (does not count tasks that started and then "
+            "failed). revoked_pre_start: task-revoked arrived for an entry that "
+            "never reached task-started. expired: producer-set expires "
+            "timestamp passed. ttl: entry exceeded --in-flight-ttl-sec."
         ),
         labels=["reason"],
     )
