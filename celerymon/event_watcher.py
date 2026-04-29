@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _WORKER_HEARTBEAT_TTL_SEC = 120
 _PRUNE_INTERVAL_SEC = 30
+_ORPHAN_STARTED_TTL_SEC = 10
+_ORPHAN_STARTED_CACHE_SIZE = 10_000
 
 
 def _normalize_buckets(buckets: Sequence[float | str]) -> list[float]:
@@ -131,6 +133,12 @@ class EventWatcher:
         self._in_flight_cache_size = in_flight_cache_size
         self._in_flight_ttl_sec = in_flight_ttl_sec
         self._eviction_counts: dict[str, int] = defaultdict(int)
+        # Holds task-started timestamps that arrived before a matching task-sent.
+        # Celery emits the two events over independent broker connections with no
+        # ordering guarantee, so a fast pickup can flip them. Without this buffer
+        # the later task-sent creates an in-flight entry nothing pops, leaking to
+        # TTL.
+        self._orphan_started: OrderedDict[str, float] = OrderedDict()
 
         self.upper_bounds = _normalize_buckets(buckets)
         self.queue_wait_upper_bounds = _normalize_buckets(queue_wait_buckets)
@@ -243,9 +251,16 @@ class EventWatcher:
         sent_ts = event.get("timestamp")
         if sent_ts is None:
             return
+        sent_ts_f = float(sent_ts)
+
+        orphan_started_ts = self._orphan_started.pop(uuid, None)
+        if orphan_started_ts is not None:
+            self._record_queue_wait(task_name, orphan_started_ts - sent_ts_f)
+            return
+
         self._in_flight.pop(uuid, None)
         self._in_flight[uuid] = InFlightEntry(
-            sent_ts=float(sent_ts),
+            sent_ts=sent_ts_f,
             task_name=task_name,
             queue_name=event.get("queue"),
             expires_ts=_parse_expires(event.get("expires")),
@@ -260,13 +275,22 @@ class EventWatcher:
         task_name: str,
         event: dict[str, Any],
     ) -> None:
-        entry = self._in_flight.pop(uuid, None)
-        if entry is None:
-            return
         started_ts = event.get("timestamp")
         if started_ts is None:
             return
-        wait_sec = float(started_ts) - entry.sent_ts
+        started_ts_f = float(started_ts)
+
+        entry = self._in_flight.pop(uuid, None)
+        if entry is None:
+            self._orphan_started.pop(uuid, None)
+            self._orphan_started[uuid] = started_ts_f
+            while len(self._orphan_started) > _ORPHAN_STARTED_CACHE_SIZE:
+                self._orphan_started.popitem(last=False)
+            return
+
+        self._record_queue_wait(task_name, started_ts_f - entry.sent_ts)
+
+    def _record_queue_wait(self, task_name: str, wait_sec: float) -> None:
         if wait_sec < 0:
             return
         self.queue_wait_sec_sum[task_name] += wait_sec
@@ -314,6 +338,11 @@ class EventWatcher:
         for uuid, reason in to_evict:
             if self._in_flight.pop(uuid, None) is not None:
                 self._eviction_counts[reason] += 1
+
+        orphan_cutoff = now_ts - _ORPHAN_STARTED_TTL_SEC
+        for uuid, orphan_started_ts in list(self._orphan_started.items()):
+            if orphan_started_ts < orphan_cutoff:
+                self._orphan_started.pop(uuid, None)
 
         heartbeat_cutoff = now - datetime.timedelta(seconds=_WORKER_HEARTBEAT_TTL_SEC)
         for hostname, ts in list(self._worker_last_heartbeat.items()):
