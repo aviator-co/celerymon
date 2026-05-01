@@ -8,6 +8,7 @@ from collections import defaultdict
 
 import celery
 
+from .event_watcher import EventWatcher
 from .timer import RepeatTimer
 
 
@@ -21,16 +22,18 @@ class WorkerWatcher:
         cls,
         app: celery.Celery,
         interval: float,
+        event_watcher: EventWatcher,
     ) -> WorkerWatcher:
-        watcher = cls(app)
+        watcher = cls(app, event_watcher)
 
         timer = RepeatTimer(interval, watcher._update)
         timer.start()
 
         return watcher
 
-    def __init__(self, app: celery.Celery):
+    def __init__(self, app: celery.Celery, event_watcher: EventWatcher):
         self._inspect = app.control.inspect()
+        self._event_watcher = event_watcher
         self.last_updated_timestamp = None
         self.oldest_started_task_timestamp = dict()
         self.task_count = dict()
@@ -46,6 +49,7 @@ class WorkerWatcher:
                 else:
                     start_time = datetime.datetime.fromtimestamp(task["time_start"])
                 task_name = task["type"]
+                self._event_watcher.record_task_name(task["id"], task_name)
                 task_count[("active", task_name, hostname)] += 1
                 if task_name not in oldest_timestamp:
                     oldest_timestamp[task_name] = start_time
@@ -55,12 +59,15 @@ class WorkerWatcher:
                     )
         for hostname, tasks in (self._inspect.reserved() or {}).items():
             for task in tasks:
-                task_count[("reserved", task["type"], hostname)] += 1
+                task_name = task["type"]
+                self._event_watcher.record_task_name(task["id"], task_name)
+                task_count[("reserved", task_name, hostname)] += 1
         for hostname, scheduled_tasks in (self._inspect.scheduled() or {}).items():
             for scheduled_task in scheduled_tasks:
-                task_count[
-                    ("scheduled", scheduled_task["request"]["type"], hostname)
-                ] += 1
+                request = scheduled_task["request"]
+                task_name = request["type"]
+                self._event_watcher.record_task_name(request["id"], task_name)
+                task_count[("scheduled", task_name, hostname)] += 1
 
         self.last_updated_timestamp = datetime.datetime.now(tz=datetime.UTC)
         self.oldest_started_task_timestamp = oldest_timestamp
