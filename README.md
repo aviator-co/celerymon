@@ -63,16 +63,21 @@ on the finished tasks. celerymon uses all these three to get the data.
 
 ## Metrics
 
-| Name                                                      | Type      | Labels                    |
-|-----------------------------------------------------------|-----------|---------------------------|
-| `celerymon_redis_last_updated_timestamp_seconds`          | Gauge     |                           |
-| `celerymon_redis_queue_item_count`                        | Gauge     | `queue_name`, `priority`  |
-| `celerymon_inspect_last_updated_timestamp_seconds`        | Gauge     |                           |
-| `celerymon_inspect_oldest_started_task_timestamp_seconds` | Gauge     | `task_name`               |
-| `celerymon_inspect_worker_held_task_count`                | Gauge     | `task_name`, `state`      |
-| `celerymon_events_last_received_timestamp_seconds`        | Gauge     | `task_name`, `event_name` |
-| `celerymon_events_count`                                  | Counter   | `task_name`, `event_name` |
-| `celerymon_events_success_task_runtime_seconds`           | Histogram | `task_name`               |
+| Name                                                      | Type      | Labels                           |
+|-----------------------------------------------------------|-----------|----------------------------------|
+| `celerymon_redis_last_updated_timestamp_seconds`          | Gauge     |                                  |
+| `celerymon_redis_queue_item_count`                        | Gauge     | `queue_name`, `priority`         |
+| `celerymon_inspect_last_updated_timestamp_seconds`        | Gauge     |                                  |
+| `celerymon_inspect_oldest_started_task_timestamp_seconds` | Gauge     | `task_name`                      |
+| `celerymon_inspect_worker_held_task_count`                | Gauge     | `task_name`, `state`, `hostname` |
+| `celerymon_events_last_received_timestamp_seconds`        | Gauge     | `task_name`, `event_name`        |
+| `celerymon_events_count`                                  | Counter   | `task_name`, `event_name`        |
+| `celerymon_events_task_runtime_seconds`                   | Histogram | `task_name`, `result`            |
+| `celerymon_events_online_worker_count`                    | Gauge     |                                  |
+| `celerymon_events_queue_wait_seconds`                     | Histogram | `task_name`                      |
+| `celerymon_events_oldest_queued_task_age_seconds`         | Gauge     | `queue_name`                     |
+| `celerymon_events_in_flight_evicted`                      | Counter   | `reason`                         |
+| `celerymon_events_in_flight_cache_size`                   | Gauge     |                                  |
 
 There are timestamp metrics. These are meant to be used for checking the
 monitoring health. If this stops updating, it means that the monitoring cannot
@@ -89,6 +94,9 @@ celerymon --broker-url=BROKER_URL
           [--redis-watch-interval-sec=10]
           [--healthz-unhealthy-threshold-sec=300]
           [--success-task-runtime-buckets=BUCKETS]
+          [--queue-wait-buckets=BUCKETS]
+          [--in-flight-cache-size=100000]
+          [--in-flight-ttl-sec=3600]
           [--port=8000]
 ```
 
@@ -98,9 +106,36 @@ To monitor multiple queues, repeat the `--queue` flag:
 celerymon --broker-url=redis://localhost:6379/0 --queue=celery --queue=agent
 ```
 
-`--success-task-runtime-buckets` accepts a comma-separated list of bucket
-boundaries in seconds (e.g. `0.1,0.5,1,5,10`). If not specified, the default
-Prometheus histogram buckets are used.
+`--success-task-runtime-buckets` defines the histogram buckets for task
+runtime. Defaults to `0.01,0.05,0.1,0.5,1,5,10,30,60,300,600,1800` (10ms to
+30 minutes), chosen to capture both fast webhook-style tasks and long-running
+batch work.
+
+`--queue-wait-buckets` defines the histogram buckets for queue wait time
+(time from task-sent to task-started). Defaults to
+`0.005,0.01,0.05,0.1,0.5,1,5,10,60,300` (5ms to 5 minutes), with extra
+sub-10ms resolution for distinguishing healthy queue states.
+
+`--in-flight-cache-size` caps the number of in-flight uuid→timestamp entries
+held for correlating task-sent with task-started.
+
+`--in-flight-ttl-sec` is the max age of an in-flight entry before it is
+treated as a zombie (task sent but never started or revoked). Eviction runs
+on a background timer every 30 seconds; metric scrapes stay pure reads.
+
+The `celerymon_events_in_flight_evicted{reason}` counter tracks why entries
+left the in-flight cache:
+
+* `lru` — evicted on insertion because `--in-flight-cache-size` was reached.
+* `failed_pre_start` — `task-failed` event arrived for an entry that never
+  transitioned to `task-started`. Tasks that started and then failed are not
+  counted here.
+* `revoked_pre_start` — `task-revoked` event arrived for an entry that never
+  transitioned to `task-started`.
+* `expired` — the producer-set `expires` timestamp on the task passed.
+* `ttl` — the entry exceeded `--in-flight-ttl-sec`. Use this counter to alarm
+  on stuck queues; the `celerymon_events_oldest_queued_task_age_seconds`
+  gauge does not include entries past TTL.
 
 ### Note on /healthz
 

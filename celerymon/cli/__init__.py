@@ -24,11 +24,23 @@ def run():
     parser.add_argument("--worker-inspect-interval-sec", type=int, default=10)
     parser.add_argument("--redis-watch-interval-sec", type=int, default=10)
     parser.add_argument("--healthz-unhealthy-threshold-sec", type=int, default=300)
-    parser.add_argument("--success-task-runtime-buckets", type=str)
+    parser.add_argument(
+        "--success-task-runtime-buckets",
+        type=str,
+        default="0.01,0.05,0.1,0.5,1,5,10,30,60,300,600,1800",
+    )
+    parser.add_argument(
+        "--queue-wait-buckets",
+        type=str,
+        default="0.005,0.01,0.05,0.1,0.5,1,5,10,60,300",
+    )
+    parser.add_argument("--in-flight-cache-size", type=int, default=100_000)
+    parser.add_argument("--in-flight-ttl-sec", type=int, default=3600)
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     buckets = parse_histogram_buckets(args.success_task_runtime_buckets)
+    queue_wait_buckets = parse_histogram_buckets(args.queue_wait_buckets)
 
     app = celery.Celery("", broker=args.broker_url)
     redis_client = redis.StrictRedis.from_url(args.broker_url)
@@ -37,7 +49,13 @@ def run():
         redis_client, args.queue, args.redis_watch_interval_sec
     )
     worker_watcher = WorkerWatcher.create_started(app, args.worker_inspect_interval_sec)
-    event_watcher = EventWatcher.create_started(app, buckets)
+    event_watcher = EventWatcher.create_started(
+        app,
+        buckets,
+        queue_wait_buckets,
+        args.in_flight_cache_size,
+        args.in_flight_ttl_sec,
+    )
     collector = Collector(redis_watcher, worker_watcher, event_watcher)
 
     registry = prometheus_client.CollectorRegistry()

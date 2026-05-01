@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Iterable
 
 import prometheus_client
@@ -85,7 +86,7 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
     active_task_count_metric = GaugeMetricFamily(
         name="celerymon_inspect_worker_held_task_count",
         documentation="Number of tasks held in all workers",
-        labels=["task_name", "state"],
+        labels=["task_name", "state", "hostname"],
     )
     if watcher.last_updated_timestamp is not None:
         last_updated_timestamp_seconds_metric.add_metric(
@@ -100,9 +101,9 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
         for key, count in watcher.task_count.items():
-            state, task_name = key
+            state, task_name, hostname = key
             active_task_count_metric.add_metric(
-                labels=[task_name, state],
+                labels=[task_name, state, hostname],
                 value=count,
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
@@ -125,15 +126,61 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
         documentation="The task event count per task name and event name.",
         labels=["task_name", "event_name"],
     )
-    success_task_runtime_seconds_metric = HistogramMetricFamily(
-        name="celerymon_events_success_task_runtime_seconds",
-        documentation="The task runtime per task name for finished success tasks.",
+    task_runtime_seconds_metric = HistogramMetricFamily(
+        name="celerymon_events_task_runtime_seconds",
+        documentation=(
+            "Task runtime per task name, labeled by result (success|failed)."
+        ),
+        labels=["task_name", "result"],
+        unit="seconds",
+    )
+    online_worker_count_metric = GaugeMetricFamily(
+        name="celerymon_events_online_worker_count",
+        documentation=(
+            "Number of workers currently online, derived from worker-online, "
+            "worker-heartbeat, and worker-offline events."
+        ),
+    )
+    queue_wait_seconds_metric = HistogramMetricFamily(
+        name="celerymon_events_queue_wait_seconds",
+        documentation=(
+            "Queue wait time (task-sent to task-started) per task name, in seconds."
+        ),
         labels=["task_name"],
         unit="seconds",
     )
+    oldest_queued_task_age_seconds_metric = GaugeMetricFamily(
+        name="celerymon_events_oldest_queued_task_age_seconds",
+        documentation=(
+            "Age of the oldest in-flight task per queue (sent but not yet started), "
+            "in seconds."
+        ),
+        labels=["queue_name"],
+        unit="seconds",
+    )
+    in_flight_evicted_metric = CounterMetricFamily(
+        name="celerymon_events_in_flight_evicted",
+        documentation=(
+            "Count of in-flight entries evicted from the task-sent/task-started "
+            "correlation cache, labeled by reason. lru: cache cap hit. "
+            "failed_pre_start: task-failed arrived for an entry that never "
+            "reached task-started (does not count tasks that started and then "
+            "failed). revoked_pre_start: task-revoked arrived for an entry that "
+            "never reached task-started. expired: producer-set expires "
+            "timestamp passed. ttl: entry exceeded --in-flight-ttl-sec."
+        ),
+        labels=["reason"],
+    )
+    in_flight_cache_size_metric = GaugeMetricFamily(
+        name="celerymon_events_in_flight_cache_size",
+        documentation="Current size of the in-flight uuid correlation cache.",
+    )
     if watcher.last_received_timestamp is not None:
-        for key, timestamp in watcher.last_received_timestamp_per_task_event.items():
-            count = watcher.num_events_per_task_count[key]
+        last_received_items = list(
+            watcher.last_received_timestamp_per_task_event.items()
+        )
+        for key, timestamp in last_received_items:
+            count = watcher.num_events_per_task_count.get(key, 0)
 
             task_name, event_name = key
             last_received_timestamp_seconds_metric.add_metric(
@@ -146,20 +193,65 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
                 value=count,
                 timestamp=timestamp.timestamp(),
             )
-        for task_name in watcher.task_names:
-            acc = 0.0
-            buckets = []
-            for i, bound in enumerate(watcher.upper_bounds):
-                acc += watcher.succeeded_task_runtime_sec[i][task_name]
-                buckets.append((floatToGoString(bound), acc))
-            success_task_runtime_seconds_metric.add_metric(
+        for task_name in tuple(watcher.task_names):
+            for result in ("success", "failed"):
+                key = (task_name, result)
+                buckets = [
+                    (
+                        floatToGoString(bound),
+                        watcher.task_runtime_sec[i].get(key, 0),
+                    )
+                    for i, bound in enumerate(watcher.upper_bounds)
+                ]
+                task_runtime_seconds_metric.add_metric(
+                    labels=[task_name, result],
+                    buckets=buckets,
+                    sum_value=watcher.task_runtime_sec_sum.get(key, 0.0),
+                    timestamp=watcher.last_received_timestamp.timestamp(),
+                )
+            queue_wait_buckets_values: list[tuple[str, float]] = [
+                (
+                    floatToGoString(bound),
+                    watcher.queue_wait_sec[i].get(task_name, 0),
+                )
+                for i, bound in enumerate(watcher.queue_wait_upper_bounds)
+            ]
+            queue_wait_seconds_metric.add_metric(
                 labels=[task_name],
-                buckets=buckets,
-                sum_value=watcher.succeeded_task_runtime_sec_sum[task_name],
+                buckets=queue_wait_buckets_values,
+                sum_value=watcher.queue_wait_sec_sum.get(task_name, 0.0),
                 timestamp=watcher.last_received_timestamp.timestamp(),
             )
+        now = datetime.datetime.now(tz=datetime.UTC)
+        online_worker_count_metric.add_metric(
+            labels=[],
+            value=watcher.online_worker_count(now),
+            timestamp=watcher.last_received_timestamp.timestamp(),
+        )
+        for queue_name, age in watcher.oldest_queued_age_by_queue(now).items():
+            oldest_queued_task_age_seconds_metric.add_metric(
+                labels=[queue_name],
+                value=age,
+                timestamp=watcher.last_received_timestamp.timestamp(),
+            )
+        for reason, count in watcher.eviction_counts().items():
+            in_flight_evicted_metric.add_metric(
+                labels=[reason],
+                value=count,
+                timestamp=watcher.last_received_timestamp.timestamp(),
+            )
+        in_flight_cache_size_metric.add_metric(
+            labels=[],
+            value=watcher.in_flight_cache_size(),
+            timestamp=watcher.last_received_timestamp.timestamp(),
+        )
     return [
         last_received_timestamp_seconds_metric,
         events_count_metric,
-        success_task_runtime_seconds_metric,
+        task_runtime_seconds_metric,
+        online_worker_count_metric,
+        queue_wait_seconds_metric,
+        oldest_queued_task_age_seconds_metric,
+        in_flight_evicted_metric,
+        in_flight_cache_size_metric,
     ]
