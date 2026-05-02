@@ -48,13 +48,15 @@ def run():
     redis_watcher = RedisWatcher.create_started(
         redis_client, args.queue, args.redis_watch_interval_sec
     )
-    worker_watcher = WorkerWatcher.create_started(app, args.worker_inspect_interval_sec)
     event_watcher = EventWatcher.create_started(
         app,
         buckets,
         queue_wait_buckets,
         args.in_flight_cache_size,
         args.in_flight_ttl_sec,
+    )
+    worker_watcher = WorkerWatcher.create_started(
+        app, args.worker_inspect_interval_sec, event_watcher
     )
     collector = Collector(redis_watcher, worker_watcher, event_watcher)
 
