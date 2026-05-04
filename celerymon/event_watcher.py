@@ -128,6 +128,7 @@ class EventWatcher:
         in_flight_ttl_sec: int,
     ):
         self._task_names_by_uuid: OrderedDict[str, str] = OrderedDict()
+        self._task_names_by_uuid_lock = threading.Lock()
         self._worker_last_heartbeat: dict[str, datetime.datetime] = dict()
         self._in_flight: OrderedDict[str, InFlightEntry] = OrderedDict()
         self._in_flight_cache_size = in_flight_cache_size
@@ -171,10 +172,7 @@ class EventWatcher:
 
         uuid: str = event["uuid"]
         if "name" in event:
-            self._task_names_by_uuid.pop(uuid, None)
-            self._task_names_by_uuid[uuid] = event["name"]
-            while len(self._task_names_by_uuid) > self._TASK_NAMES_CACHE_LIMIT:
-                self._task_names_by_uuid.popitem(last=False)
+            self.record_task_name(uuid, event["name"])
 
         task_name = self._task_names_by_uuid.get(uuid, "(UNKNOWN)")
         self.task_names.add(task_name)
@@ -199,6 +197,13 @@ class EventWatcher:
             if self._in_flight.pop(uuid, None) is not None:
                 self._eviction_counts["failed_pre_start"] += 1
             self._record_task_runtime(task_name, "failed", event)
+
+    def record_task_name(self, uuid: str, name: str) -> None:
+        with self._task_names_by_uuid_lock:
+            self._task_names_by_uuid[uuid] = name
+            self._task_names_by_uuid.move_to_end(uuid)
+            while len(self._task_names_by_uuid) > self._TASK_NAMES_CACHE_LIMIT:
+                self._task_names_by_uuid.popitem(last=False)
 
     def _on_worker_event(
         self,
