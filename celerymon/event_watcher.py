@@ -28,7 +28,7 @@ def _normalize_buckets(buckets: Sequence[float | str]) -> list[float]:
     return bounds
 
 
-def _parse_expires(value: Any) -> float | None:
+def _parse_timestamp(value: Any) -> float | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -41,11 +41,22 @@ def _parse_expires(value: Any) -> float | None:
     return None
 
 
+def _due_ts(sent_ts: float, eta_ts: float | None) -> float:
+    """The time a task is due to run: its eta when dispatched with a
+    countdown/ETA, otherwise when it was sent. Queue wait and queued-age are
+    measured from here, so an intentional countdown counts only once the task
+    is actually overdue, not for the scheduled delay itself."""
+    if eta_ts is None:
+        return sent_ts
+    return max(sent_ts, eta_ts)
+
+
 class InFlightEntry(NamedTuple):
     sent_ts: float
     task_name: str
     queue_name: str | None
     expires_ts: float | None
+    eta_ts: float | None
 
 
 class EventWatcher:
@@ -257,10 +268,13 @@ class EventWatcher:
         if sent_ts is None:
             return
         sent_ts_f = float(sent_ts)
+        eta_ts = _parse_timestamp(event.get("eta"))
 
         orphan_started_ts = self._orphan_started.pop(uuid, None)
         if orphan_started_ts is not None:
-            self._record_queue_wait(task_name, orphan_started_ts - sent_ts_f)
+            self._record_queue_wait(
+                task_name, orphan_started_ts - _due_ts(sent_ts_f, eta_ts)
+            )
             return
 
         self._in_flight.pop(uuid, None)
@@ -268,7 +282,8 @@ class EventWatcher:
             sent_ts=sent_ts_f,
             task_name=task_name,
             queue_name=event.get("queue"),
-            expires_ts=_parse_expires(event.get("expires")),
+            expires_ts=_parse_timestamp(event.get("expires")),
+            eta_ts=eta_ts,
         )
         while len(self._in_flight) > self._in_flight_cache_size:
             self._in_flight.popitem(last=False)
@@ -293,7 +308,9 @@ class EventWatcher:
                 self._orphan_started.popitem(last=False)
             return
 
-        self._record_queue_wait(task_name, started_ts_f - entry.sent_ts)
+        self._record_queue_wait(
+            task_name, started_ts_f - _due_ts(entry.sent_ts, entry.eta_ts)
+        )
 
     def _record_queue_wait(self, task_name: str, wait_sec: float) -> None:
         if wait_sec < 0:
@@ -308,8 +325,10 @@ class EventWatcher:
         now: datetime.datetime,
     ) -> dict[str, float]:
         """Pure read: walks the in-flight cache, returns per-queue max age of
-        entries that are still eligible (not expired, not past TTL). Does not
-        mutate state; eviction happens on the prune timer.
+        live entries (not expired, not past TTL) that are past their due time.
+        A task with a future eta is scheduled, not waiting, so it is skipped
+        until its eta passes. Does not mutate state; eviction happens on the
+        prune timer.
         """
         now_ts = now.timestamp()
         ttl_cutoff = now_ts - self._in_flight_ttl_sec
@@ -321,7 +340,10 @@ class EventWatcher:
                 continue
             if entry.queue_name is None:
                 continue
-            age = now_ts - entry.sent_ts
+            due_ts = _due_ts(entry.sent_ts, entry.eta_ts)
+            if due_ts > now_ts:
+                continue  # scheduled for later, not yet due
+            age = now_ts - due_ts
             current = ages.get(entry.queue_name)
             if current is None or age > current:
                 ages[entry.queue_name] = age

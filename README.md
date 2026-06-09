@@ -112,7 +112,8 @@ runtime. Defaults to `0.01,0.05,0.1,0.5,1,5,10,30,60,300,600,1800` (10ms to
 batch work.
 
 `--queue-wait-buckets` defines the histogram buckets for queue wait time
-(time from task-sent to task-started). Defaults to
+(time from when a task becomes due to run to task-started; due is its eta for
+countdown/ETA dispatch, otherwise task-sent). Defaults to
 `0.005,0.01,0.05,0.1,0.5,1,5,10,60,300` (5ms to 5 minutes), with extra
 sub-10ms resolution for distinguishing healthy queue states.
 

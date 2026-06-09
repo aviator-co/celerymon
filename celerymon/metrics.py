@@ -144,7 +144,9 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
     queue_wait_seconds_metric = HistogramMetricFamily(
         name="celerymon_events_queue_wait_seconds",
         documentation=(
-            "Queue wait time (task-sent to task-started) per task name, in seconds."
+            "Queue wait time per task name, in seconds. Measured from when the task "
+            "became due to run (its eta for countdown/ETA dispatch, otherwise "
+            "task-sent) to task-started, so intentional countdowns are not counted."
         ),
         labels=["task_name"],
         unit="seconds",
@@ -152,8 +154,8 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
     oldest_queued_task_age_seconds_metric = GaugeMetricFamily(
         name="celerymon_events_oldest_queued_task_age_seconds",
         documentation=(
-            "Age of the oldest in-flight task per queue (sent but not yet started), "
-            "in seconds."
+            "Age of the oldest due-but-not-started task per queue, in seconds. "
+            "Tasks scheduled with a future eta are not counted until their eta passes."
         ),
         labels=["queue_name"],
         unit="seconds",
