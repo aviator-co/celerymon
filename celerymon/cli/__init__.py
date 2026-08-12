@@ -3,6 +3,7 @@
 
 import argparse
 import datetime
+import logging
 import wsgiref.simple_server
 import wsgiref.types
 from typing import Iterable, Sequence
@@ -39,9 +40,15 @@ def run():
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
+    # Without this the root logger sits at WARNING and celerymon's own info
+    # logs are dropped, while third-party loggers stay quiet.
+    logging.basicConfig(level=logging.WARNING)
+    logging.getLogger("celerymon").setLevel(logging.INFO)
+
     buckets = parse_histogram_buckets(args.success_task_runtime_buckets)
     queue_wait_buckets = parse_histogram_buckets(args.queue_wait_buckets)
 
+    started_at = datetime.datetime.now(tz=datetime.UTC)
     app = celery.Celery("", broker=args.broker_url)
     redis_client = redis.StrictRedis.from_url(args.broker_url)
 
@@ -75,6 +82,7 @@ def run():
                 worker_watcher,
                 event_watcher,
                 args.healthz_unhealthy_threshold_sec,
+                started_at,
             )
             if stat == "":
                 start_response("200 OK", [])
@@ -103,28 +111,22 @@ def _check_health(
     worker_watcher: WorkerWatcher,
     event_watcher: EventWatcher,
     threshold_sec: int,
+    started_at: datetime.datetime,
 ) -> str:
     now = datetime.datetime.now(tz=datetime.UTC)
 
     status = []
-    if (
-        redis_watcher.last_updated_timestamp
-        and (now - redis_watcher.last_updated_timestamp).seconds > threshold_sec
+    for name, timestamp in (
+        ("Redis data", redis_watcher.last_updated_timestamp),
+        ("Worker inspection data", worker_watcher.last_updated_timestamp),
+        ("Event data", event_watcher.last_received_timestamp),
     ):
-        status.append(f"Redis data is too old ({redis_watcher.last_updated_timestamp})")
-    if (
-        worker_watcher.last_updated_timestamp
-        and (now - worker_watcher.last_updated_timestamp).seconds > threshold_sec
-    ):
-        status.append(
-            f"Worker inspection data is too old ({worker_watcher.last_updated_timestamp})"
-        )
-    if (
-        event_watcher.last_received_timestamp
-        and (now - event_watcher.last_received_timestamp).seconds > threshold_sec
-    ):
-        status.append(
-            f"Event data is too old ({event_watcher.last_received_timestamp})"
-        )
+        if timestamp is None:
+            # A watcher that has never updated is only unhealthy once the
+            # process has been up long enough for it to have reported.
+            if (now - started_at).total_seconds() > threshold_sec:
+                status.append(f"{name} has never been updated")
+        elif (now - timestamp).total_seconds() > threshold_sec:
+            status.append(f"{name} is too old ({timestamp})")
 
     return "\r\n".join(status)
