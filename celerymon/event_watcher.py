@@ -91,17 +91,22 @@ class EventWatcher:
             max_backoff = 60.0
             failing = False
             while True:
-                connected_at = time.monotonic()
+                connected_at = None
                 try:
                     with app.connection() as conn:
                         recv = app.events.Receiver(conn, handlers={"*": store.on_event})
+                        connected_at = time.monotonic()
                         logger.info("EventWatcher connected, capturing events")
                         recv.capture(limit=None)
                 except Exception:
-                    # Only a connection that held for a while counts as recovered;
-                    # resetting on connect alone defeats the backoff, since a
-                    # connection that fails inside capture reconnects immediately.
-                    if time.monotonic() - connected_at > max_backoff:
+                    # Only a connection that held for a while counts as recovered.
+                    # Resetting on connect alone defeats the backoff when capture
+                    # fails immediately, and timing from before the connect counts
+                    # a blocked TCP connect as time spent connected.
+                    if (
+                        connected_at is not None
+                        and time.monotonic() - connected_at > max_backoff
+                    ):
                         backoff = 1.0
                         failing = False
                     if not failing:
