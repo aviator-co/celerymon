@@ -89,32 +89,39 @@ class EventWatcher:
         def run() -> None:
             backoff = 1.0
             max_backoff = 60.0
+            failing = False
             while True:
+                connected_at = None
                 try:
                     with app.connection() as conn:
                         recv = app.events.Receiver(conn, handlers={"*": store.on_event})
+                        connected_at = time.monotonic()
                         logger.info("EventWatcher connected, capturing events")
-                        backoff = 1.0
                         recv.capture(limit=None)
                 except Exception:
-                    logger.exception(
-                        "EventWatcher connection lost, reconnecting in %.1fs",
-                        backoff,
-                    )
+                    # Only a connection that held for a while counts as recovered.
+                    # Resetting on connect alone defeats the backoff when capture
+                    # fails immediately, and timing from before the connect counts
+                    # a blocked TCP connect as time spent connected.
+                    if (
+                        connected_at is not None
+                        and time.monotonic() - connected_at > max_backoff
+                    ):
+                        backoff = 1.0
+                        failing = False
+                    if not failing:
+                        logger.exception(
+                            "EventWatcher connection lost, reconnecting until it recovers"
+                        )
+                        failing = True
                     time.sleep(backoff)
                     backoff = min(backoff * 2, max_backoff)
 
         def update_enable_event() -> None:
-            try:
-                app.control.enable_events()
-            except Exception:
-                logger.exception("Failed to enable events")
+            app.control.enable_events()
 
         def prune() -> None:
-            try:
-                store._prune(datetime.datetime.now(tz=datetime.UTC))
-            except Exception:
-                logger.exception("EventWatcher prune failed")
+            store._prune(datetime.datetime.now(tz=datetime.UTC))
 
         timer = RepeatTimer(10, update_enable_event)
         timer.daemon = True
