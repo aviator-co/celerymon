@@ -73,6 +73,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh workflow run image-build.yaml --ref "${TAG}"
+      - name: create github release
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "${TAG}" --generate-notes --verify-tag
       - name: notify release failure
         # This includes cancellation.
         if: ${{ !success() }}
