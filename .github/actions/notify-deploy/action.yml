@@ -83,6 +83,10 @@ runs:
           blocks: [{ type: "section", text: { type: "mrkdwn", text: $body } }]
         }')
 
-        curl -sS -X POST -H 'Content-type: application/json' \
+        if ! curl --fail --silent --show-error \
+          --connect-timeout 5 --max-time 15 \
+          -X POST -H 'Content-type: application/json' \
           --data-binary "$PAYLOAD" \
-          "$WEBHOOK_URL"
+          "$WEBHOOK_URL"; then
+          echo "::warning::Slack notification failed"
+        fi

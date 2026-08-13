@@ -19,6 +19,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       actions: write
@@ -37,11 +38,17 @@ jobs:
           method: "POST"
           bearerToken: ${{ secrets.AVIATOR_API_TOKEN }}
           data: '{"release_cut_id": "${{ inputs.aviator_release_cut_id }}", "workflow_run_id": "${{ github.run_id }}"}'
+      - name: fetch tags
+        run: git fetch --force --tags
+      # Aviator sends release candidate versions like 0.4.0-rc1; the stable tag
+      # drops that suffix.
       - name: resolve release tag
         id: tag
         env:
           RC_VERSION: ${{ inputs.aviator_release_candidate_version }}
-        run: echo "tag=v${RC_VERSION#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="${RC_VERSION#v}"
+          echo "tag=v${VERSION%-rc*}" >> "$GITHUB_OUTPUT"
       - name: notify release start
         uses: ./.github/actions/notify-deploy
         with:
@@ -49,16 +56,14 @@ jobs:
           state: start
           subject: "celerymon release"
           version: ${{ steps.tag.outputs.tag }}
-      # Forced on both sides so an Aviator retry of the same version re-points
-      # the tag instead of failing.
       - name: create release tag
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git tag --force "${TAG}"
-          git push --force origin "refs/tags/${TAG}"
+          git tag "${TAG}"
+          git push origin "refs/tags/${TAG}"
       # A tag pushed with GITHUB_TOKEN does not fire push triggers, so the image
       # build never starts on its own. Dispatching at the tag ref keeps
       # docker/metadata-action deriving the same image tags as a real tag push.
