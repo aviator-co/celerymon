@@ -26,12 +26,12 @@ jobs:
     steps:
       # Checkout comes first: the notify steps below are a local action, so
       # anything failing before this point reports nothing to Slack.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: "${{ inputs.aviator_release_cut_commit_hash || github.ref }}"
           fetch-depth: 0
           persist-credentials: false
-      - uses: fjogeleit/http-request-action@551353b829c3646756b2ec2b3694f819d7957495 # v2.0.0
+      - uses: fjogeleit/http-request-action@f98bb26551cd1af7d3eb2674578a80754ece88db # v2.0.1
         if: inputs.aviator_release_cut_id != ''
         with:
           url: "${{ vars.AVIATOR_API_HOST }}/api/v1/sync-build-github-action"
