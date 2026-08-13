@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: {}
 
 env:
   REGISTRY: ghcr.io
@@ -34,3 +35,19 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - name: notify image build success
+        uses: ./.github/actions/notify-deploy
+        with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
+          state: success
+          subject: "celerymon image build"
+          version: ${{ github.ref_name }}
+      - name: notify image build failure
+        # This includes cancellation.
+        if: ${{ !success() }}
+        uses: ./.github/actions/notify-deploy
+        with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
+          state: failure
+          subject: "celerymon image build"
+          version: ${{ github.ref_name }}

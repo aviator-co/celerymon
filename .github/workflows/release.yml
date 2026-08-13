@@ -1,0 +1,79 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      aviator_release_cut_id:
+        description: "Database ID of release cut"
+        required: false
+        type: string
+      aviator_release_cut_commit_hash:
+        description: "Commit SHA to be tagged"
+        required: false
+        type: string
+      aviator_release_candidate_version:
+        description: "Name of the version"
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # Checkout comes first: the notify steps below are a local action, so
+      # anything failing before this point reports nothing to Slack.
+      - uses: actions/checkout@v6
+        with:
+          ref: "${{ inputs.aviator_release_cut_commit_hash || github.ref }}"
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: fjogeleit/http-request-action@551353b829c3646756b2ec2b3694f819d7957495 # v2.0.0
+        if: inputs.aviator_release_cut_id != ''
+        with:
+          url: "${{ vars.AVIATOR_API_HOST }}/api/v1/sync-build-github-action"
+          method: "POST"
+          bearerToken: ${{ secrets.AVIATOR_API_TOKEN }}
+          data: '{"release_cut_id": "${{ inputs.aviator_release_cut_id }}", "workflow_run_id": "${{ github.run_id }}"}'
+      - name: resolve release tag
+        id: tag
+        env:
+          RC_VERSION: ${{ inputs.aviator_release_candidate_version }}
+        run: echo "tag=v${RC_VERSION#v}" >> "$GITHUB_OUTPUT"
+      - name: notify release start
+        uses: ./.github/actions/notify-deploy
+        with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
+          state: start
+          subject: "celerymon release"
+          version: ${{ steps.tag.outputs.tag }}
+      # Forced on both sides so an Aviator retry of the same version re-points
+      # the tag instead of failing.
+      - name: create release tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git tag --force "${TAG}"
+          git push --force origin "refs/tags/${TAG}"
+      # A tag pushed with GITHUB_TOKEN does not fire push triggers, so the image
+      # build never starts on its own. Dispatching at the tag ref keeps
+      # docker/metadata-action deriving the same image tags as a real tag push.
+      - name: dispatch image build
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run image-build.yaml --ref "${TAG}"
+      - name: notify release failure
+        # This includes cancellation.
+        if: ${{ !success() }}
+        uses: ./.github/actions/notify-deploy
+        with:
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
+          state: failure
+          subject: "celerymon release"
+          version: ${{ steps.tag.outputs.tag }}

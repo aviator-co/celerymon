@@ -1,0 +1,21 @@
+merge_rules:
+  labels:
+    trigger: mergequeue
+    skip_line: mergequeue-priority
+    merge_failed: blocked
+  publish_status_check: ready
+  preconditions:
+    # required_checks is ignored while use_github_mergeability is true, and main
+    # protection only requires an approval, no status checks to defer to.
+    use_github_mergeability: false
+    number_of_approvals: 1
+    required_checks:
+      - pre-commit
+      - typecheck
+      - zizmor
+  merge_mode:
+    type: default
+  merge_strategy:
+    name: squash
+  base_branches:
+    - main
