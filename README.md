@@ -70,6 +70,10 @@ on the finished tasks. celerymon uses all these three to get the data.
 | `celerymon_inspect_last_updated_timestamp_seconds`        | Gauge     |                                  |
 | `celerymon_inspect_oldest_started_task_timestamp_seconds` | Gauge     | `task_name`                      |
 | `celerymon_inspect_worker_held_task_count`                | Gauge     | `task_name`, `state`, `hostname` |
+| `celerymon_inspect_worker_master_maxrss_bytes`            | Gauge     | `hostname`                       |
+| `celerymon_inspect_worker_master_major_faults`            | Counter   | `hostname`                       |
+| `celerymon_inspect_worker_pool_process_count`             | Gauge     | `hostname`                       |
+| `celerymon_inspect_worker_uptime_seconds`                 | Gauge     | `hostname`                       |
 | `celerymon_events_last_received_timestamp_seconds`        | Gauge     | `task_name`, `event_name`        |
 | `celerymon_events_count`                                  | Counter   | `task_name`, `event_name`        |
 | `celerymon_events_task_runtime_seconds`                   | Histogram | `task_name`, `result`            |
@@ -78,6 +82,7 @@ on the finished tasks. celerymon uses all these three to get the data.
 | `celerymon_events_oldest_queued_task_age_seconds`         | Gauge     | `queue_name`                     |
 | `celerymon_events_in_flight_evicted`                      | Counter   | `reason`                         |
 | `celerymon_events_in_flight_cache_size`                   | Gauge     |                                  |
+| `celerymon_events_worker_tasks_processed`                 | Counter   | `hostname`                       |
 
 There are timestamp metrics. These are meant to be used for checking the
 monitoring health. If this stops updating, it means that the monitoring cannot
