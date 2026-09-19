@@ -88,6 +88,38 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
         documentation="Number of tasks held in all workers",
         labels=["task_name", "state", "hostname"],
     )
+    master_maxrss_bytes_metric = GaugeMetricFamily(
+        name="celerymon_inspect_worker_master_maxrss_bytes",
+        documentation=(
+            "Peak resident set size of the worker master process. Celery reads "
+            "this with getrusage(RUSAGE_SELF) in the master, so pool children "
+            "are excluded, and it is a high-water mark that never decreases "
+            "while the master lives."
+        ),
+        labels=["hostname"],
+        unit="bytes",
+    )
+    master_major_faults_metric = CounterMetricFamily(
+        name="celerymon_inspect_worker_master_major_faults",
+        documentation=(
+            "Major page faults taken by the worker master process since it "
+            "started, from the same getrusage call as the memory metric. Faults "
+            "that need disk are the signal that a process is thrashing rather "
+            "than merely large."
+        ),
+        labels=["hostname"],
+    )
+    pool_process_count_metric = GaugeMetricFamily(
+        name="celerymon_inspect_worker_pool_process_count",
+        documentation="Number of live pool child processes per worker.",
+        labels=["hostname"],
+    )
+    uptime_seconds_metric = GaugeMetricFamily(
+        name="celerymon_inspect_worker_uptime_seconds",
+        documentation="Uptime of the worker master process.",
+        labels=["hostname"],
+        unit="seconds",
+    )
     if watcher.last_updated_timestamp is not None:
         last_updated_timestamp_seconds_metric.add_metric(
             labels=[],
@@ -107,10 +139,38 @@ def worker_metrics(watcher: WorkerWatcher) -> list[prometheus_client.Metric]:
                 value=count,
                 timestamp=watcher.last_updated_timestamp.timestamp(),
             )
+        for hostname, maxrss_bytes in watcher.master_maxrss_bytes.items():
+            master_maxrss_bytes_metric.add_metric(
+                labels=[hostname],
+                value=maxrss_bytes,
+                timestamp=watcher.last_updated_timestamp.timestamp(),
+            )
+        for hostname, major_faults in watcher.master_major_faults.items():
+            master_major_faults_metric.add_metric(
+                labels=[hostname],
+                value=major_faults,
+                timestamp=watcher.last_updated_timestamp.timestamp(),
+            )
+        for hostname, process_count in watcher.pool_process_count.items():
+            pool_process_count_metric.add_metric(
+                labels=[hostname],
+                value=process_count,
+                timestamp=watcher.last_updated_timestamp.timestamp(),
+            )
+        for hostname, uptime in watcher.uptime_seconds.items():
+            uptime_seconds_metric.add_metric(
+                labels=[hostname],
+                value=uptime,
+                timestamp=watcher.last_updated_timestamp.timestamp(),
+            )
     return [
         last_updated_timestamp_seconds_metric,
         oldest_started_task_timestamp_seconds_metric,
         active_task_count_metric,
+        master_maxrss_bytes_metric,
+        master_major_faults_metric,
+        pool_process_count_metric,
+        uptime_seconds_metric,
     ]
 
 
@@ -176,6 +236,15 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
     in_flight_cache_size_metric = GaugeMetricFamily(
         name="celerymon_events_in_flight_cache_size",
         documentation="Current size of the in-flight uuid correlation cache.",
+    )
+    worker_tasks_processed_metric = CounterMetricFamily(
+        name="celerymon_events_worker_tasks_processed",
+        documentation=(
+            "Tasks processed by each worker since that worker started, reported "
+            "on the worker heartbeat. Resets when the worker restarts, and the "
+            "series is dropped when the worker goes offline."
+        ),
+        labels=["hostname"],
     )
     if watcher.last_received_timestamp is not None:
         last_received_items = list(
@@ -247,6 +316,12 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
             value=watcher.in_flight_cache_size(),
             timestamp=watcher.last_received_timestamp.timestamp(),
         )
+        for hostname, processed in watcher.worker_processed_counts().items():
+            worker_tasks_processed_metric.add_metric(
+                labels=[hostname],
+                value=processed,
+                timestamp=watcher.last_received_timestamp.timestamp(),
+            )
     return [
         last_received_timestamp_seconds_metric,
         events_count_metric,
@@ -256,4 +331,5 @@ def event_metrics(watcher: EventWatcher) -> list[prometheus_client.Metric]:
         oldest_queued_task_age_seconds_metric,
         in_flight_evicted_metric,
         in_flight_cache_size_metric,
+        worker_tasks_processed_metric,
     ]

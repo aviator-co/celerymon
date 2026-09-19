@@ -148,6 +148,7 @@ class EventWatcher:
         self._task_names_by_uuid: OrderedDict[str, str] = OrderedDict()
         self._task_names_by_uuid_lock = threading.Lock()
         self._worker_last_heartbeat: dict[str, datetime.datetime] = dict()
+        self._worker_processed: dict[str, int] = dict()
         self._in_flight: OrderedDict[str, InFlightEntry] = OrderedDict()
         self._in_flight_cache_size = in_flight_cache_size
         self._in_flight_ttl_sec = in_flight_ttl_sec
@@ -234,8 +235,15 @@ class EventWatcher:
             return
         if event_name == "worker-offline":
             self._worker_last_heartbeat.pop(hostname, None)
+            self._worker_processed.pop(hostname, None)
         else:
             self._worker_last_heartbeat[hostname] = now
+            processed = event.get("processed")
+            if processed is not None:
+                self._worker_processed[hostname] = processed
+
+    def worker_processed_counts(self) -> dict[str, int]:
+        return dict(self._worker_processed)
 
     def online_worker_count(self, now: datetime.datetime) -> int:
         cutoff = now - datetime.timedelta(seconds=_WORKER_HEARTBEAT_TTL_SEC)
@@ -382,6 +390,7 @@ class EventWatcher:
         for hostname, ts in list(self._worker_last_heartbeat.items()):
             if ts <= heartbeat_cutoff:
                 self._worker_last_heartbeat.pop(hostname, None)
+                self._worker_processed.pop(hostname, None)
 
     def eviction_counts(self) -> dict[str, int]:
         return dict(self._eviction_counts)

@@ -16,6 +16,10 @@ class WorkerWatcher:
     last_updated_timestamp: datetime.datetime | None
     oldest_started_task_timestamp: dict[str, datetime.datetime]
     task_count: dict[tuple[str, str, str], int]
+    master_maxrss_bytes: dict[str, int]
+    master_major_faults: dict[str, int]
+    pool_process_count: dict[str, int]
+    uptime_seconds: dict[str, int]
 
     @classmethod
     def create_started(
@@ -37,6 +41,10 @@ class WorkerWatcher:
         self.last_updated_timestamp = None
         self.oldest_started_task_timestamp = dict()
         self.task_count = dict()
+        self.master_maxrss_bytes = dict()
+        self.master_major_faults = dict()
+        self.pool_process_count = dict()
+        self.uptime_seconds = dict()
 
     def _update(self) -> None:
         oldest_timestamp: dict[str, datetime.datetime] = dict()
@@ -69,6 +77,28 @@ class WorkerWatcher:
                 self._event_watcher.record_task_name(request["id"], task_name)
                 task_count[("scheduled", task_name, hostname)] += 1
 
+        master_maxrss_bytes: dict[str, int] = dict()
+        master_major_faults: dict[str, int] = dict()
+        pool_process_count: dict[str, int] = dict()
+        uptime_seconds: dict[str, int] = dict()
+        for hostname, stats in (self._inspect.stats() or {}).items():
+            # rusage is the string "N/A" where the platform has no resource
+            # module, and ru_maxrss is kilobytes on Linux, bytes on macOS.
+            rusage = stats.get("rusage")
+            if isinstance(rusage, dict):
+                master_maxrss_bytes[hostname] = rusage["maxrss"] * 1024
+                master_major_faults[hostname] = rusage["majflt"]
+            processes = (stats.get("pool") or {}).get("processes")
+            if processes is not None:
+                pool_process_count[hostname] = len(processes)
+            uptime = stats.get("uptime")
+            if uptime is not None:
+                uptime_seconds[hostname] = uptime
+
         self.last_updated_timestamp = datetime.datetime.now(tz=datetime.UTC)
         self.oldest_started_task_timestamp = oldest_timestamp
         self.task_count = task_count
+        self.master_maxrss_bytes = master_maxrss_bytes
+        self.master_major_faults = master_major_faults
+        self.pool_process_count = pool_process_count
+        self.uptime_seconds = uptime_seconds
