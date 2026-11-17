@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":enablePreCommit"
+  ],
+  "enabledManagers": [
+    "pep621",
+    "github-actions",
+    "dockerfile",
+    "pyenv",
+    "pre-commit"
+  ],
+  "timezone": "America/Los_Angeles",
+  "minimumReleaseAge": "7 days",
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
+  "vulnerabilityAlerts": { "enabled": false },
+  "lockFileMaintenance": { "enabled": true, "schedule": ["* * * * 1"] },
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["!python"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchDepNames": ["python"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    {
+      "matchCategories": ["python"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python dependencies"
+    },
+    { "matchManagers": ["dockerfile"], "pinDigests": true },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchDepNames": ["ghcr.io/astral-sh/uv"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github actions"
+    },
+    {
+      "matchManagers": ["pre-commit"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "pre-commit hooks"
+    }
+  ]
+}

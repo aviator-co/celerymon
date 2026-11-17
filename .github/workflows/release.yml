@@ -26,7 +26,7 @@ jobs:
     steps:
       # Checkout comes first: the notify steps below are a local action, so
       # anything failing before this point reports nothing to Slack.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: "${{ inputs.aviator_release_cut_commit_hash || github.ref }}"
           fetch-depth: 0
@@ -50,7 +50,7 @@ jobs:
           VERSION="${RC_VERSION#v}"
           echo "tag=v${VERSION%-rc*}" >> "$GITHUB_OUTPUT"
       - name: notify release start
-        uses: ./.github/actions/notify-deploy
+        uses: $/.github/actions/notify-deploy
         with:
           webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
           state: start
@@ -82,7 +82,7 @@ jobs:
       - name: notify release failure
         # This includes cancellation.
         if: ${{ !success() }}
-        uses: ./.github/actions/notify-deploy
+        uses: $/.github/actions/notify-deploy
         with:
           webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
           state: failure

@@ -48,3 +48,6 @@ select = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["celerymon"]
+
+[tool.uv]
+exclude-newer = "7 days"
