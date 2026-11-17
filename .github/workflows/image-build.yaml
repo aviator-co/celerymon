@@ -18,26 +18,26 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
       - name: notify image build success
-        uses: ./.github/actions/notify-deploy
+        uses: $/.github/actions/notify-deploy
         with:
           webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
           state: success
@@ -46,7 +46,7 @@ jobs:
       - name: notify image build failure
         # This includes cancellation.
         if: ${{ !success() }}
-        uses: ./.github/actions/notify-deploy
+        uses: $/.github/actions/notify-deploy
         with:
           webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD_DEPLOY_UPDATES }}
           state: failure
